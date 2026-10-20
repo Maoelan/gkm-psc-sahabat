@@ -1,0 +1,80 @@
+import type { Cookies } from '@sveltejs/kit';
+import { randomUUID } from 'node:crypto';
+import { db } from './db';
+import { secureCookies } from './env';
+import { hashSecret, randomToken } from './crypto';
+import { getServiceModeAt } from './service-mode';
+import type { ServiceMode } from '../service-mode';
+
+export const SESSION_COOKIE = 'lapor_aman_session';
+const SESSION_SECONDS = 2 * 60 * 60;
+
+export type ReporterSession = {
+	id: string;
+	mode: ServiceMode;
+	csrfToken: string;
+	expiresAt: Date;
+};
+
+export async function createSession(cookies: Cookies, modeOverride?: ServiceMode) {
+	const id = randomUUID();
+	const secret = randomToken(32);
+	const csrfToken = randomToken(24);
+	const secretHash = hashSecret(secret);
+	const mode = modeOverride ?? (await getServiceModeAt());
+	const expiresAt = new Date(Date.now() + SESSION_SECONDS * 1000);
+
+	await db.query(
+		`INSERT INTO chat_sessions (id, session_secret_hash, mode, csrf_token, expires_at)
+		 VALUES ($1, $2, $3, $4, $5)`,
+		[id, secretHash, mode, csrfToken, expiresAt]
+	);
+	cookies.set(SESSION_COOKIE, secret, {
+		path: '/',
+		httpOnly: true,
+		sameSite: 'strict',
+		secure: secureCookies(),
+		maxAge: SESSION_SECONDS
+	});
+	return { id, mode, csrfToken, expiresAt };
+}
+
+export async function requireSession(cookies: Cookies): Promise<ReporterSession | null> {
+	const secret = cookies.get(SESSION_COOKIE);
+	if (!secret) return null;
+	const result = await db.query<{
+		id: string;
+		mode: ServiceMode;
+		csrf_token: string;
+		expires_at: Date;
+	}>(
+		`SELECT id, mode, csrf_token, expires_at FROM chat_sessions
+		 WHERE session_secret_hash = $1 AND status = 'active' AND expires_at > now()`,
+		[hashSecret(secret)]
+	);
+	const row = result.rows[0];
+	if (!row) return null;
+	return { id: row.id, mode: row.mode, csrfToken: row.csrf_token, expiresAt: row.expires_at };
+}
+
+export async function endSession(cookies: Cookies) {
+	const secret = cookies.get(SESSION_COOKIE);
+	if (secret) {
+		await db.query(
+			`UPDATE chat_sessions SET status = 'ended', ended_at = now()
+			 WHERE session_secret_hash = $1 AND status = 'active'`,
+			[hashSecret(secret)]
+		);
+	}
+	cookies.delete(SESSION_COOKIE, { path: '/' });
+}
+
+export function hasValidCsrf(request: Request, session: ReporterSession) {
+	const token = request.headers.get('x-csrf-token');
+	return Boolean(token) && token === session.csrfToken;
+}
+
+export function requestOriginAllowed(request: Request) {
+	const origin = request.headers.get('origin');
+	return !origin || origin === new URL(request.url).origin;
+}

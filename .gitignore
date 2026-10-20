@@ -1,0 +1,62 @@
+# Dependencies
+node_modules/
+
+# Build output
+.output/
+.vercel/
+.netlify/
+.wrangler/
+/.svelte-kit/
+/build/
+/coverage/
+/playwright-report/
+/test-results/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment and credentials
+.env
+.env.*
+!.env.example
+.env.local
+.env.*.local
+.dev.vars
+.direnv/
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.backup
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Local test and agent artifacts
+.tmp/
+tmp-*
+*.log
+*.tsbuildinfo
+.cache/
+.turbo/
+.agents/
+.impeccable/
+.taste-skill/
+taste-chat-output/
+skills-lock.json
+mermaid-diagram*.png
+
+# Screenshots and generated reports at repository root
+/*.png
+/*.jpg
+/*.jpeg
+/*.pdf
+*.xlsx
