@@ -40,6 +40,17 @@ Thumbs.db
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
+# Internal/AI process documents: keep locally, never publish to GitHub
+/DESIGN*.md
+/PRD*.md
+/PRODUCT*.md
+/QA*.md
+/UX-AUDIT*.md
+/VISUAL-CRITIQUE*.md
+/*-AUDIT*.md
+/*-CRITIQUE*.md
+/static/illustrations/*.prompt.md
+
 # Local test and agent artifacts
 .tmp/
 tmp-*

@@ -127,7 +127,7 @@ npm run security:scan
 npm audit --audit-level=high
 ```
 
-Status pengujian dan batas yang belum diverifikasi ada di `QA.md`. Keputusan produk ada di `PRODUCT.md`; kebutuhan lengkap ada di `PRD-LAPOR-AMAN-v0.1.md`.
+Dokumen internal (PRD, product, QA, desain, dan audit) tidak disertakan di repo publik.
 
 ## Struktur backend
 
