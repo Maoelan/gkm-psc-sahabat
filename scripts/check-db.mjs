@@ -64,7 +64,7 @@ try {
 		 FROM staff_users su LEFT JOIN staff_roles sr ON sr.staff_id = su.id
 		 GROUP BY su.username ORDER BY su.username`
 	);
-	check('Dua akun staff lokal tersedia', staff.rowCount === 2, `${staff.rowCount} akun`);
+	check('Tiga akun staff lokal tersedia', staff.rowCount >= 3, `${staff.rowCount} akun`);
 	check(
 		'Akun petugas memiliki peran petugas',
 		staff.rows.some((item) => item.username === 'petugas' && item.roles?.includes('petugas'))
@@ -72,6 +72,10 @@ try {
 	check(
 		'Akun bidan memiliki peran bidan_pic',
 		staff.rows.some((item) => item.username === 'bidan' && item.roles?.includes('bidan_pic'))
+	);
+	check(
+		'Akun admin memiliki peran admin',
+		staff.rows.some((item) => item.username === 'admin' && item.roles?.includes('admin'))
 	);
 
 	const schedules = await client.query('SELECT count(*)::int AS count FROM service_schedules');

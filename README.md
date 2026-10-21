@@ -70,10 +70,11 @@ npm run start
 
 - `petugas`: antrean meja petugas, bantuan percakapan langsung, dan riwayat percakapan yang ditugaskan.
 - `bidan`: rekap dan pembukaan NIK. Peran ini tidak membuka percakapan langsung.
+- `admin`: akses penuh ke meja petugas, percakapan langsung, dan rekap. Gunakan hanya untuk pengujian jalur admin.
 
 Akun `petugas` yang membuka `/rekap` diarahkan ke `/petugas/ganti-akun` untuk mengakhiri sesi petugas lalu masuk dengan akun bidan/PIC. Halaman rekap tidak dapat dibuka dengan sesi petugas.
 
-Kata sandi tidak ditulis di repositori atau halaman publik. Nilainya diatur melalui `DEMO_STAFF_PETUGAS_PASSWORD` dan `DEMO_STAFF_BIDAN_PASSWORD` di `.env`, lalu dipakai oleh seed. Ganti sebelum presentasi.
+Kata sandi tidak ditulis di repositori atau halaman publik. Nilainya diatur melalui `DEMO_STAFF_PETUGAS_PASSWORD`, `DEMO_STAFF_BIDAN_PASSWORD`, dan `DEMO_STAFF_ADMIN_PASSWORD` di `.env`, lalu dipakai oleh seed. Ganti sebelum presentasi.
 
 ## Variabel penting
 

@@ -60,32 +60,43 @@ try {
 
 	const petugasPassword = process.env.DEMO_STAFF_PETUGAS_PASSWORD;
 	const bidanPassword = process.env.DEMO_STAFF_BIDAN_PASSWORD;
-	if (!petugasPassword || !bidanPassword) {
+	const adminPassword = process.env.DEMO_STAFF_ADMIN_PASSWORD;
+	if (!petugasPassword || !bidanPassword || !adminPassword) {
 		throw new Error('Kata sandi akun staff belum diatur di .env.');
 	}
 
 	const petugasId = randomUUID();
 	const bidanId = randomUUID();
+	const adminId = randomUUID();
 	await client.query(
 		`INSERT INTO staff_users (id, username, display_name, password_hash)
-		 VALUES ($1, 'petugas', 'Petugas', $2), ($3, 'bidan', 'Bidan/PIC', $4)
+		 VALUES ($1, 'petugas', 'Petugas', $2), ($3, 'bidan', 'Bidan/PIC', $4),
+		        ($5, 'admin', 'Admin', $6)
 		 ON CONFLICT (username) DO UPDATE SET display_name = EXCLUDED.display_name,
 		   password_hash = EXCLUDED.password_hash, active = true`,
-		[petugasId, hashPassword(petugasPassword), bidanId, hashPassword(bidanPassword)]
+		[
+			petugasId,
+			hashPassword(petugasPassword),
+			bidanId,
+			hashPassword(bidanPassword),
+			adminId,
+			hashPassword(adminPassword)
+		]
 	);
-	const staff = await client.query('SELECT id, username FROM staff_users WHERE username IN ($1, $2)', [
-		'petugas',
-		'bidan'
-	]);
+	const staff = await client.query(
+		'SELECT id, username FROM staff_users WHERE username IN ($1, $2, $3)',
+		['petugas', 'bidan', 'admin']
+	);
 	const petugas = staff.rows.find((row) => row.username === 'petugas')?.id;
 	const bidan = staff.rows.find((row) => row.username === 'bidan')?.id;
-	if (!petugas || !bidan) throw new Error('Akun staff gagal dibuat.');
+	const admin = staff.rows.find((row) => row.username === 'admin')?.id;
+	if (!petugas || !bidan || !admin) throw new Error('Akun staff gagal dibuat.');
 
 	await client.query(
 		`INSERT INTO staff_roles (staff_id, role, scope) VALUES
-		 ($1, 'petugas', 'assigned'), ($2, 'bidan_pic', 'all')
+		 ($1, 'petugas', 'assigned'), ($2, 'bidan_pic', 'all'), ($3, 'admin', 'all')
 		 ON CONFLICT (staff_id, role) DO UPDATE SET scope = EXCLUDED.scope`,
-		[petugas, bidan]
+		[petugas, bidan, admin]
 	);
 
 	const scheduleCount = await client.query('SELECT count(*)::int AS count FROM service_schedules');
@@ -375,8 +386,8 @@ try {
 		[randomUUID()]
 	);
 	await client.query('COMMIT');
-	console.log('Data awal disiapkan: 2 akun staff, jadwal layanan, dan 3 laporan.');
-	console.log('Akun: petugas dan bidan. Kata sandi dibaca dari .env.');
+	console.log('Data awal disiapkan: 3 akun staff, jadwal layanan, dan 3 laporan.');
+	console.log('Akun: petugas, bidan, dan admin. Kata sandi dibaca dari .env.');
 } catch (error) {
 	await client.query('ROLLBACK');
 	console.error('Seed gagal:', error instanceof Error ? error.message : 'kesalahan tidak diketahui');
