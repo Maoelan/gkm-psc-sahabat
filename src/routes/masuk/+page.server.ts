@@ -12,7 +12,7 @@ import { loginSchema, validationMessage } from '../../lib/server/validation';
 
 function safeNext(value: string | null, fallback: string) {
 	if (!value || !value.startsWith('/') || value.startsWith('//')) return fallback;
-	if (!['/petugas', '/petugas/percakapan', '/rekap'].includes(value)) return fallback;
+	if (!['/petugas', '/petugas/percakapan', '/rekap', '/admin/nik'].includes(value)) return fallback;
 	return value;
 }
 
@@ -21,6 +21,7 @@ function canAccessNext(roles: StaffRole[], next: string) {
 		return roles.includes('petugas') || roles.includes('admin');
 	}
 	if (next === '/rekap') return roles.includes('bidan_pic') || roles.includes('admin');
+	if (next === '/admin/nik') return roles.includes('admin');
 	return false;
 }
 

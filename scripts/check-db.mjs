@@ -77,6 +77,14 @@ try {
 		'Akun admin memiliki peran admin',
 		staff.rows.some((item) => item.username === 'admin' && item.roles?.includes('admin'))
 	);
+	check(
+		'Akun petugas memiliki akses admin',
+		staff.rows.some((item) => item.username === 'petugas' && item.roles?.includes('admin'))
+	);
+	check(
+		'Akun bidan memiliki akses admin',
+		staff.rows.some((item) => item.username === 'bidan' && item.roles?.includes('admin'))
+	);
 
 	const schedules = await client.query('SELECT count(*)::int AS count FROM service_schedules');
 	check('Jadwal layanan tersedia', Number(schedules.rows[0].count) >= 6, `${schedules.rows[0].count} hari`);

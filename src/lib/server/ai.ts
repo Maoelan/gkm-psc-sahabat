@@ -70,7 +70,7 @@ const PROJECT_FACTS = [
 	'Setelah laporan dikirim, laporan masuk ke meja petugas. Petugas berwenang memeriksa dan mencatat keputusan; AI tidak mengambil keputusan.',
 	'Petugas hanya melihat laporan yang ditugaskan kepadanya. Admin dapat meninjau seluruh laporan.',
 	'Riwayat percakapan dapat dibuka petugas yang ditugaskan dan admin. Setiap pembukaan dicatat dalam audit.',
-	'NIK hanya dapat dibuka bidan/PIC. Meja petugas umum tidak menampilkan NIK. NIK opsional dan boleh dikosongkan.',
+	'NIK hanya dapat dibuka akun berwenang dengan peran admin. Daftar meja petugas tidak menampilkan NIK. NIK opsional dan boleh dikosongkan.',
 	'Pelapor dapat melewati pertanyaan, menambah cerita, memeriksa dan mengubah draf, memilih tidak dihubungi, serta menekan tombol Selesai untuk mengakhiri percakapan. AI tidak mengakhiri percakapan sendiri. Pelapor tidak wajib mengirim laporan.',
 	'Notifikasi WhatsApp hanya berisi pemberitahuan umum; tidak memuat nama, cerita, NIK, kontak, atau lampiran.',
 	'AI tidak memberi diagnosis, nasihat hukum, opini pribadi, keputusan, janji, atau penilaian.',

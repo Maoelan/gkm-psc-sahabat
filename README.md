@@ -9,10 +9,11 @@ Portal pengaduan GKM PSC SAHABAT, UPT Puskesmas Suranadi. Versi ini memakai back
 - Penyimpanan sesi, draf, laporan, keputusan, audit, riwayat percakapan, dan outbox notifikasi di PostgreSQL.
 - Login staff lokal dengan sesi server, cookie HttpOnly, CSRF, pembatasan percobaan, peran, dan audit.
 - Meja petugas `/petugas` untuk laporan dalam penugasan akun. Admin dapat meninjau seluruh laporan.
-- Bantuan petugas langsung `/petugas/percakapan`: pelapor dapat meminta petugas saat jam layanan, petugas mengambil percakapan, membalas, dan menutupnya. AI dijeda selama handoff aktif, dan tombol Selesai pelapor dikunci sampai percakapan petugas ditutup.
+- Bantuan petugas langsung `/petugas/percakapan`: pelapor dapat meminta petugas saat jam layanan, atau petugas/bidan/admin dapat mengambil alih percakapan AI yang sedang berjalan. AI dijeda selama handoff aktif, dan tombol Selesai pelapor dikunci sampai percakapan petugas ditutup.
 - Riwayat percakapan di meja petugas, dengan otorisasi petugas yang ditugaskan/admin dan audit setiap pembukaan.
-- Rekap `/rekap` khusus peran `bidan_pic`/`admin`, termasuk pembukaan NIK yang tercatat di audit.
-- Export `.xlsx` dibuat di server; sheet `Rekap` tidak memuat NIK dan sheet `Identitas` memuat NIK khusus bidan/PIC.
+- Rekap `/rekap` untuk akun dengan peran admin, termasuk pembukaan NIK yang tercatat di audit.
+- Halaman `/admin/nik` khusus akun admin menampilkan NIK lengkap tanpa sensor dengan audit setiap pembukaan halaman.
+- Export `.xlsx` dibuat di server; sheet `Rekap` tidak memuat NIK dan sheet `Identitas` memuat NIK untuk akun berwenang.
 - Mode layanan mengikuti jadwal WITA di database: Senin–Kamis 08.00–14.00, Jumat 08.00–11.00, Sabtu 08.00–12.30. Di luar jadwal, alur memakai mode AI.
 - Integrasi NVIDIA Nemotron untuk menanggapi pesan pelapor, termasuk pertanyaan proyek, dan memilih satu topik pelengkap dari waktu, lokasi umum, atau kebutuhan yang belum terisi. Server mengirim riwayat percakapan terbatas; AI memilih topik dan kalimat, lalu server memvalidasi cakupan field serta batas aman. Pertanyaan atau kekhawatiran saat alur berjalan tidak dipakai sebagai jawaban field. Pola NIK, nomor, email, dan nama yang jelas diredaksi sebelum cerita dikirim; ini bukan jaminan anonimisasi. Pertanyaan cadangan dipakai bila penyedia tidak tersedia atau keluar dari batas.
 - Outbox WhatsApp beserta worker `outbox`, `meta`, dan `twilio`. Pesan tidak memuat nama, cerita, NIK, kontak, atau lampiran.
@@ -68,11 +69,11 @@ npm run start
 
 ## Akun staff lokal
 
-- `petugas`: antrean meja petugas, bantuan percakapan langsung, dan riwayat percakapan yang ditugaskan.
-- `bidan`: rekap dan pembukaan NIK. Peran ini tidak membuka percakapan langsung.
-- `admin`: akses penuh ke meja petugas, percakapan langsung, dan rekap. Gunakan hanya untuk pengujian jalur admin.
+- `petugas`: peran `petugas` dan `admin`; dapat membuka meja petugas, percakapan langsung, rekap, dan halaman Data NIK.
+- `bidan`: peran `bidan_pic` dan `admin`; dapat membuka rekap, halaman Data NIK, dan percakapan langsung.
+- `admin`: peran `admin`; akses penuh ke meja petugas, percakapan langsung, rekap, dan halaman Data NIK.
 
-Akun `petugas` yang membuka `/rekap` diarahkan ke `/petugas/ganti-akun` untuk mengakhiri sesi petugas lalu masuk dengan akun bidan/PIC. Halaman rekap tidak dapat dibuka dengan sesi petugas.
+Ketiga akun demo memakai akses admin agar dapat mendemontrasikan alur atasan. Pemisahan tugas petugas/bidan/admin tidak diterapkan pada ketiga akun demo ini.
 
 Kata sandi tidak ditulis di repositori atau halaman publik. Nilainya diatur melalui `DEMO_STAFF_PETUGAS_PASSWORD`, `DEMO_STAFF_BIDAN_PASSWORD`, dan `DEMO_STAFF_ADMIN_PASSWORD` di `.env`, lalu dipakai oleh seed. Ganti sebelum presentasi.
 
@@ -116,9 +117,9 @@ Untuk pengiriman nyata, isi kredensial Meta Cloud API atau Twilio dan nomor tuju
 - Ini lingkungan demo lokal, bukan layanan produksi. Belum ada MFA, manajemen identitas organisasi, pemulihan akun, atau pengujian penetrasi.
 - NIK adalah pengecualian demo terhadap PRD v0.1 FR-03. Sebelum produksi, PRD, pemberitahuan privasi, dasar pemrosesan, retensi, penghapusan, dan persetujuan akses wajib direvisi.
 - Enkripsi dan kontrol akses server sudah diterapkan untuk demo, tetapi tidak menjadikan NIK aman untuk data nyata. File `.xlsx` yang sudah diunduh berada di luar kendali aplikasi.
-- Petugas tidak menerima NIK atau kontak lengkap. Pembukaan NIK oleh bidan/PIC dicatat di `audit_events`.
+- NIK tidak ditampilkan di daftar meja petugas. NIK lengkap dapat dilihat di `/admin/nik` dan melalui tombol tampilkan NIK di `/rekap` untuk akun dengan peran admin. Pembukaan halaman NIK dicatat sebagai `nik.directory.viewed`.
 - Riwayat percakapan hanya dapat dibuka oleh petugas yang ditugaskan atau admin. Setiap pembukaan dicatat sebagai `report.chat_transcript.viewed`.
-- Percakapan langsung hanya untuk peran `petugas` dan `admin`. `bidan_pic` tidak membuka percakapan langsung. Setiap pembukaan thread, balasan, dan penutupan dicatat dalam audit; NIK, nomor, dan email disamarkan.
+- Percakapan langsung dapat dibuka akun dengan peran admin. Percakapan yang belum memiliki handoff tampil di antrean aktif dan dapat diambil alih; pengambilalihan dicatat sebagai `chat.handoff.staff_takeover`. Setiap pembukaan thread, balasan, dan penutupan dicatat dalam audit; NIK, nomor, dan email disamarkan di percakapan.
 - AI boleh menanggapi pertanyaan pelapor tentang alur proyek dan menanyakan satu topik pelengkap tentang waktu, lokasi umum, atau kebutuhan yang belum terisi. AI tidak memberi nasihat, diagnosis, bantuan hukum, keputusan, atau meminta identitas. Tombol Selesai tetap menjadi keputusan pelapor untuk membuka draf.
 - Selama handoff `waiting` atau `active`, server menolak giliran AI dan pengiriman laporan. Handoff hanya dapat diminta pada mode/jam layanan operator.
 - Integrasi Dinas Sosial, visum, pendampingan, dan rujukan tidak ada dan tidak diklaim.

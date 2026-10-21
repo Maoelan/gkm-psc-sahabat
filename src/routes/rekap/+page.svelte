@@ -101,7 +101,7 @@
 </script>
 
 <svelte:head>
-	<title>Rekap bidan/PIC | LAPOR AMAN</title>
+	<title>Rekap laporan | LAPOR AMAN</title>
 </svelte:head>
 
 <div class="recap-page" class:gate-view={!data.authenticated}>
@@ -109,20 +109,20 @@
 		<section class="gate-shell" aria-labelledby="gate-title">
 			<div class="gate-main">
 				<p class="step-kicker">Akses terbatas</p> <!-- taste-skill-ignore: label peran akses -->
-				<h1 id="gate-title" tabindex="-1" bind:this={gateHeading}>Rekap bidan/PIC</h1>
+				<h1 id="gate-title" tabindex="-1" bind:this={gateHeading}>Rekap laporan</h1>
 				<p class="gate-lead">
-					Halaman ini hanya terbuka untuk akun bidan/PIC yang sudah masuk. Server memeriksa sesi
+					Halaman ini hanya terbuka untuk akun berwenang yang sudah masuk. Server memeriksa sesi
 					dan peran sebelum mengirim rekap atau membuka NIK.
 				</p>
 				<div class="gate-notice">
 					<strong>NIK hanya untuk tindak lanjut.</strong>
 					<p>
-						Akses NIK dibatasi untuk akun bidan/PIC dan setiap pembukaan dicatat dalam audit.
-						Jangan menyalin atau membagikan NIK tanpa kebutuhan layanan.
+						Akses NIK dibatasi untuk akun dengan peran admin dan setiap pembukaan dicatat dalam
+						audit. Jangan menyalin atau membagikan NIK tanpa kebutuhan layanan.
 					</p>
 				</div>
 				<div class="gate-actions">
-					<a class="button-primary" href="/masuk?next=/rekap">Masuk sebagai bidan/PIC</a>
+					<a class="button-primary" href="/masuk?next=/rekap">Masuk akun berwenang</a>
 					<a class="button-secondary" href="/">Kembali ke portal publik</a>
 				</div>
 			</div>
@@ -131,7 +131,7 @@
 				<h2>Apa yang bisa dilihat?</h2>
 				<ul>
 					<li>Rekap status dan keputusan laporan.</li>
-					<li>NIK korban, hanya setelah menekan tombol tampilkan.</li>
+					<li>NIK korban tanpa sensor di halaman Data NIK khusus admin.</li>
 					<li>File .xlsx dengan sheet Rekap dan Identitas.</li>
 				</ul>
 				<p class="gate-side-note">
@@ -143,15 +143,16 @@
 		<section class="recap-shell" aria-labelledby="recap-title">
 			<header class="recap-header">
 				<div>
-					<p class="step-kicker">Ruang kerja bidan/PIC</p> <!-- taste-skill-ignore: label ruang kerja -->
+					<p class="step-kicker">Ruang kerja admin</p> <!-- taste-skill-ignore: label ruang kerja -->
 					<h1 id="recap-title" tabindex="-1" bind:this={dashboardHeading}>Rekap laporan</h1>
 					<p>
-						Masuk sebagai <strong>{data.staff?.displayName ?? 'Bidan/PIC'}</strong>. Rekap dibaca
+						Masuk sebagai <strong>{data.staff?.displayName ?? 'Admin'}</strong>. Rekap dibaca
 						langsung dari database LAPOR AMAN; laporan baru dari chat muncul setelah halaman dimuat
 						ulang.
 					</p>
 				</div>
 				<div class="recap-actions">
+					<a class="button-secondary" href="/admin/nik">Data NIK lengkap</a>
 					<a
 						class="button-primary"
 						href="/api/staff/recap/export"
@@ -165,10 +166,12 @@
 			</header>
 
 			<div class="recap-notice">
-				<strong>NIK hanya di halaman ini.</strong>
+				<strong>NIK hanya untuk tindak lanjut.</strong>
 				<p>
-					NIK tidak ditampilkan di meja petugas. File .xlsx dibuat server dan memuat NIK di sheet
-					Identitas. Jangan menyimpan atau membagikan file di luar kebutuhan layanan.
+					NIK lengkap tanpa sensor ada di <a href="/admin/nik">halaman Data NIK</a>. NIK juga dapat
+					ditampilkan per laporan di halaman ini dan setiap pembukaan dicatat. File .xlsx dibuat
+					server dan memuat NIK di sheet Identitas. Jangan menyimpan atau membagikan file di luar
+					kebutuhan layanan.
 				</p>
 				{#if data.outbox}
 					<p class="notification-status">
@@ -244,7 +247,10 @@
 					<div class="table-heading">
 						<div>
 							<h2 id="table-title">Daftar laporan</h2>
-							<p>Klik “Lihat detail” untuk membuka data korban dan NIK.</p>
+							<p>
+								Klik “Lihat detail” untuk membuka data korban. NIK lengkap ada di halaman Data
+								NIK.
+							</p>
 						</div>
 						<span class="table-count">{filtered.length} laporan</span>
 					</div>
@@ -296,7 +302,7 @@
 				<section class="detail-card" aria-labelledby="detail-title">
 					<header class="detail-head">
 						<div>
-							<p class="step-kicker">Detail terbatas · bidan/PIC</p> <!-- taste-skill-ignore: label akses detail -->
+							<p class="step-kicker">Detail terbatas · admin</p> <!-- taste-skill-ignore: label akses detail -->
 							<h2 id="detail-title" tabindex="-1" bind:this={detailHeading}>Laporan {selected.id}</h2>
 							<p>Diterima {formatReportDate(selected.receivedAt)} WITA</p>
 						</div>
@@ -343,8 +349,8 @@
 					{/if}
 
 					<p class="detail-note">
-						NIK hanya untuk tindak lanjut bidan/PIC, misalnya koordinasi visum atau Dinas Sosial.
-						Gunakan sesuai kebutuhan layanan dan jangan dibagikan ke pihak lain.
+						NIK hanya untuk tindak lanjut petugas berwenang, misalnya koordinasi visum atau Dinas
+						Sosial. Gunakan sesuai kebutuhan layanan dan jangan dibagikan ke pihak lain.
 					</p>
 				</section>
 			{/if}

@@ -21,16 +21,24 @@
 			{#if data.switched}
 				<div class="login-switch-note" role="status">
 					<strong>Sesi petugas sudah diakhiri.</strong>
-					<p>Masuk dengan akun bidan/PIC untuk membuka rekap.</p>
+					<p>Masuk dengan akun berwenang untuk membuka rekap.</p>
 				</div>
 			{/if}
 
 			<div class="login-notice">
-				<strong>{data.next === '/rekap' ? 'Rekap hanya untuk bidan/PIC.' : 'Akses terbatas.'}</strong>
+				<strong>
+					{data.next === '/admin/nik'
+						? 'Halaman NIK hanya untuk akun admin.'
+						: data.next === '/rekap'
+							? 'Rekap hanya untuk akun berwenang.'
+							: 'Akses terbatas.'}
+				</strong>
 				<p>
-					{data.next === '/rekap'
-						? 'Akun petugas tidak dapat membuka halaman rekap atau NIK. Masuk dengan akun bidan/PIC yang diberikan admin layanan.'
-						: 'NIK hanya dapat dibuka oleh akun bidan/PIC dan setiap pembukaan tercatat dalam audit.'}
+					{data.next === '/admin/nik'
+						? 'Masuk dengan akun yang memiliki peran admin. Setiap pembukaan halaman NIK tercatat dalam audit.'
+						: data.next === '/rekap'
+							? 'Akun tanpa peran admin tidak dapat membuka halaman rekap atau NIK. Masuk dengan akun yang diberikan admin layanan.'
+							: 'NIK hanya dapat dibuka oleh akun dengan peran admin dan setiap pembukaan tercatat dalam audit.'}
 				</p>
 			</div>
 
@@ -76,8 +84,8 @@
 			<h2>Yang perlu diketahui</h2>
 			<ul>
 				<li>Sesi disimpan di server, bukan hanya di browser.</li>
-				<li>Meja petugas tidak menerima atau menampilkan NIK.</li>
-				<li>Rekap bidan/PIC dapat membuka NIK dengan audit.</li>
+				<li>Meja petugas tidak menampilkan NIK di daftar laporan.</li>
+				<li>NIK lengkap ada di halaman khusus admin dan setiap akses diaudit.</li>
 				<li>Export dibuat di server dan tetap menyertakan data laporan.</li>
 			</ul>
 			<p class="side-note">

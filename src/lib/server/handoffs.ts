@@ -6,6 +6,7 @@ import { recordAudit } from './audit';
 import { getServiceModeAt } from './service-mode';
 import { maskSensitiveText, type TranscriptMessage } from '../reports';
 import type {
+	ActiveConversation,
 	HandoffCloseReason,
 	HandoffQueueItem,
 	HandoffStatus,
@@ -41,6 +42,17 @@ type QueueRow = HandoffRow & {
 	claimed_by_me: boolean;
 	message_count: number;
 	last_message_at: Date | null;
+};
+
+type ActiveConversationRow = {
+	session_id: string;
+	mode: ActiveConversation['mode'];
+	created_at: Date;
+	last_message_at: Date;
+	message_count: number;
+	body_enc: Buffer;
+	body_iv: Buffer;
+	body_tag: Buffer;
 };
 
 type MessageRow = {
@@ -521,6 +533,192 @@ export async function getStaffChatQueue(staff: StaffSession): Promise<HandoffQue
 		messageCount: Number(row.message_count),
 		lastMessageAt: row.last_message_at?.toISOString() ?? null
 	}));
+}
+
+export async function getActiveChatSessions(staff: StaffSession): Promise<ActiveConversation[]> {
+	if (!staff.roles.includes('admin')) return [];
+	const result = await db.query<ActiveConversationRow>(
+		`SELECT cs.id AS session_id, cs.mode, cs.created_at,
+		        last.created_at AS last_message_at,
+		        stats.message_count,
+		        last.body_enc, last.body_iv, last.body_tag
+		 FROM chat_sessions cs
+		 JOIN LATERAL (
+			SELECT count(*)::int AS message_count
+			FROM chat_messages cm
+			WHERE cm.session_id = cs.id AND cm.sender_type = 'user'
+		 ) stats ON stats.message_count > 0
+		 JOIN LATERAL (
+			SELECT cm.created_at, cm.body_enc, cm.body_iv, cm.body_tag
+			FROM chat_messages cm
+			WHERE cm.session_id = cs.id AND cm.sender_type = 'user'
+			ORDER BY cm.created_at DESC, cm.id DESC
+			LIMIT 1
+		 ) last ON true
+		 WHERE cs.status = 'active'
+		   AND cs.expires_at > now()
+		   AND NOT EXISTS (SELECT 1 FROM chat_handoffs ch WHERE ch.session_id = cs.id)
+		   AND NOT EXISTS (SELECT 1 FROM reports r WHERE r.source_session_id = cs.id)
+		 ORDER BY last.created_at DESC
+		 LIMIT 20`
+	);
+	const conversations: ActiveConversation[] = [];
+	for (const row of result.rows) {
+		try {
+			const preview = maskSensitiveText(
+				decrypt(row.body_enc, row.body_iv, row.body_tag, 'chat_message')
+			)
+				.replace(/\s+/g, ' ')
+				.trim();
+			conversations.push({
+				sessionId: row.session_id,
+				mode: row.mode,
+				startedAt: row.created_at.toISOString(),
+				lastMessageAt: row.last_message_at.toISOString(),
+				messageCount: Number(row.message_count),
+				preview: preview.length > 140 ? `${preview.slice(0, 137)}...` : preview
+			});
+		} catch {
+			// Lewati pesan yang tidak dapat didekripsi; antrean lain tetap dapat dipakai.
+		}
+	}
+	return conversations;
+}
+
+export async function takeoverChatSession(
+	staff: StaffSession,
+	sessionId: string,
+	requestId?: string | null
+) {
+	if (!staff.roles.includes('admin')) {
+		throw new HandoffServiceError(
+			403,
+			'takeover_forbidden',
+			'Ambil alih percakapan hanya untuk akun admin.'
+		);
+	}
+	return transaction(async (client) => {
+		await lockSession(client, sessionId);
+		const report = await client.query(
+			'SELECT 1 FROM reports WHERE source_session_id = $1 LIMIT 1',
+			[sessionId]
+		);
+		if (report.rowCount) {
+			throw new HandoffServiceError(
+				409,
+				'report_already_submitted',
+				'Laporan sudah dikirim. Percakapan langsung tidak dapat diambil alih.'
+			);
+		}
+		const userMessage = await client.query(
+			`SELECT 1 FROM chat_messages
+			 WHERE session_id = $1 AND sender_type = 'user'
+			 LIMIT 1`,
+			[sessionId]
+		);
+		if (!userMessage.rowCount) {
+			throw new HandoffServiceError(
+				409,
+				'chat_not_ready',
+				'Percakapan ini belum memiliki pesan pelapor.'
+			);
+		}
+
+		const existing = await lockOpenHandoff(client, sessionId);
+		if (existing) {
+			if (existing.status === 'active' && existing.claimed_by === staff.staffId) {
+				const row = await loadStaffHandoff(client, existing.id);
+				return {
+					handoff: mapStaffHandoff(row, staff),
+					message: null,
+					latestMessageId: await latestHandoffMessageId(client, existing.id)
+				};
+			}
+			if (existing.status === 'active') {
+				throw new HandoffServiceError(
+					409,
+					'handoff_already_claimed',
+					'Percakapan ini sedang ditangani petugas lain.'
+				);
+			}
+
+			await client.query(
+				`UPDATE chat_handoffs
+				 SET status = 'active', claimed_by = $2, claimed_at = now()
+				 WHERE id = $1 AND status = 'waiting'`,
+				[existing.id, staff.staffId]
+			);
+			await client.query(
+				`UPDATE chat_sessions
+				 SET expires_at = GREATEST(expires_at, now() + interval '2 hours')
+				 WHERE id = $1`,
+				[sessionId]
+			);
+			const message = await insertHandoffMessage(client, {
+				sessionId,
+				handoffId: existing.id,
+				sender: 'service',
+				source: 'handoff',
+				body: 'Petugas sudah bergabung. AI dijeda sampai percakapan dengan petugas selesai.'
+			});
+			await recordAudit(
+				{
+					actorType: 'staff',
+					actorId: staff.staffId,
+					action: 'chat.handoff.claimed',
+					objectType: 'chat_handoff',
+					objectId: existing.id,
+					requestId,
+					metadata: { initiatedBy: 'staff', sessionId }
+				},
+				client
+			);
+			const row = await loadStaffHandoff(client, existing.id);
+			return {
+				handoff: mapStaffHandoff(row, staff),
+				message,
+				latestMessageId: message.id
+			};
+		}
+
+		const handoffId = randomUUID();
+		await client.query(
+			`INSERT INTO chat_handoffs (id, session_id, status, claimed_by, claimed_at)
+			 VALUES ($1, $2, 'active', $3, now())`,
+			[handoffId, sessionId, staff.staffId]
+		);
+		await client.query(
+			`UPDATE chat_sessions
+			 SET expires_at = GREATEST(expires_at, now() + interval '2 hours')
+			 WHERE id = $1`,
+			[sessionId]
+		);
+		const message = await insertHandoffMessage(client, {
+			sessionId,
+			handoffId,
+			sender: 'service',
+			source: 'handoff',
+			body: 'Petugas sudah bergabung. AI dijeda sampai percakapan dengan petugas selesai.'
+		});
+		await recordAudit(
+			{
+				actorType: 'staff',
+				actorId: staff.staffId,
+				action: 'chat.handoff.staff_takeover',
+				objectType: 'chat_handoff',
+				objectId: handoffId,
+				requestId,
+				metadata: { sessionId }
+			},
+			client
+		);
+		const row = await loadStaffHandoff(client, handoffId);
+		return {
+			handoff: mapStaffHandoff(row, staff),
+			message,
+			latestMessageId: message.id
+		};
+	});
 }
 
 export async function claimStaffChat(

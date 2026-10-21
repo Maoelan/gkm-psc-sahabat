@@ -94,7 +94,9 @@ try {
 
 	await client.query(
 		`INSERT INTO staff_roles (staff_id, role, scope) VALUES
-		 ($1, 'petugas', 'assigned'), ($2, 'bidan_pic', 'all'), ($3, 'admin', 'all')
+		 ($1, 'petugas', 'assigned'), ($1, 'admin', 'all'),
+		 ($2, 'bidan_pic', 'all'), ($2, 'admin', 'all'),
+		 ($3, 'admin', 'all')
 		 ON CONFLICT (staff_id, role) DO UPDATE SET scope = EXCLUDED.scope`,
 		[petugas, bidan, admin]
 	);

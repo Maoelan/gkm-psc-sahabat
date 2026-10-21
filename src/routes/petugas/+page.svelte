@@ -184,9 +184,7 @@
 			</div>
 			<div class="staff-title-actions">
 				<a class="button-primary" href="/petugas/percakapan">Percakapan langsung</a>
-				<a class="button-secondary" href="/petugas/ganti-akun" title="Beralih ke akun bidan/PIC"
-					>Rekap bidan/PIC</a
-				>
+				<a class="button-secondary" href="/rekap">Rekap laporan</a>
 				<a class="button-secondary" href="/">Kembali ke portal publik</a>
 			</div>
 		</header>
@@ -195,9 +193,9 @@
 			<div class="staff-notice">
 				<strong>Akses terbatas.</strong>
 				<span>
-					NIK tidak ditampilkan di meja petugas. Hanya akun bidan/PIC yang dapat membukanya di
-					<a href="/petugas/ganti-akun">halaman rekap terbatas</a>. Bantuan percakapan langsung
-					juga dibatasi untuk petugas dan admin. Server memeriksa sesi, peran, hak akses
+					NIK tidak ditampilkan di daftar laporan. NIK lengkap ada di
+					<a href="/admin/nik">halaman Data NIK khusus admin</a>. Petugas, bidan, dan admin
+					memakai akses admin untuk percakapan langsung. Server memeriksa sesi, peran, hak akses
 					laporan, dan token CSRF pada setiap permintaan.
 				</span>
 			</div>
@@ -281,11 +279,10 @@
 					</dl>
 
 					<div class="restricted-note">
-						<strong>NIK tidak ditampilkan di meja petugas.</strong>
+						<strong>NIK tidak ditampilkan di daftar laporan.</strong>
 						<p>
-							Hanya akun bidan/PIC yang dapat membuka NIK di
-							<a href="/petugas/ganti-akun">halaman rekap terbatas</a>. Pembukaan NIK dicatat
-							dalam audit.
+							NIK lengkap tanpa sensor ada di <a href="/admin/nik">halaman Data NIK khusus admin</a
+							>. Pembukaan halaman NIK dicatat dalam audit.
 						</p>
 					</div>
 

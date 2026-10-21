@@ -107,6 +107,12 @@
 						<a href="/petugas" aria-current={page.url.pathname === '/petugas' ? 'page' : undefined}>
 							Meja petugas
 						</a>
+						<a
+							href="/admin/nik"
+							aria-current={page.url.pathname === '/admin/nik' ? 'page' : undefined}
+						>
+							Data NIK
+						</a>
 					{/if}
 				{:else}
 					<a href="/masuk" aria-current={page.url.pathname === '/masuk' ? 'page' : undefined}>
@@ -139,6 +145,9 @@
 					{#if data.staff.roles.includes('petugas') || data.staff.roles.includes('admin')}
 						<a href="/petugas/percakapan" onclick={() => closeMenu()}>Percakapan langsung</a>
 					{/if}
+					{#if data.staff.roles.includes('admin')}
+						<a href="/admin/nik" onclick={() => closeMenu()}>Data NIK lengkap</a>
+					{/if}
 					<form method="POST" action="/masuk?/logout">
 						<input type="hidden" name="csrfToken" value={data.staff.csrfToken} />
 						<button class="mobile-logout" type="submit">Keluar dari sesi petugas</button>
@@ -147,7 +156,7 @@
 					<a href="/masuk" onclick={() => closeMenu()}>Masuk petugas</a>
 				{/if}
 				<a href="/petugas" onclick={() => closeMenu()}>Meja petugas</a>
-				<a href={recapHref} onclick={() => closeMenu()}>Rekap bidan/PIC</a>
+				<a href={recapHref} onclick={() => closeMenu()}>Rekap laporan</a>
 			</nav>
 			<p>Keluar cepat mengakhiri sesi server bila memungkinkan, tetapi tidak menghapus riwayat browser atau jejak perangkat.</p>
 		</div>

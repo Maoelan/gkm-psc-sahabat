@@ -42,7 +42,7 @@ export function buildRecapWorkbook(rows: RecapExportRow[], generatedAt = new Dat
 		{
 			name: 'Identitas',
 			title: 'IDENTITAS KORBAN — AKSES BIDAN/PIC',
-			note: 'Berisi NIK. Hanya untuk akun bidan/PIC. Jangan dibagikan ke meja petugas umum.',
+			note: 'Berisi NIK. Hanya untuk akun berwenang dengan peran admin. Jangan dibagikan tanpa kebutuhan layanan.',
 			headers: ['Kode laporan', 'Nama korban', 'NIK', 'Status', 'Keputusan'],
 			rows: rows.map((row) => [
 				row.id,

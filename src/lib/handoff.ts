@@ -1,3 +1,4 @@
+import type { ServiceMode } from './service-mode';
 import type { TranscriptMessage } from './reports';
 
 export type HandoffStatus = 'waiting' | 'active' | 'closed' | 'cancelled';
@@ -28,6 +29,15 @@ export type HandoffQueueItem = {
 	claimedByName: string | null;
 	messageCount: number;
 	lastMessageAt: string | null;
+};
+
+export type ActiveConversation = {
+	sessionId: string;
+	mode: ServiceMode;
+	startedAt: string;
+	lastMessageAt: string;
+	messageCount: number;
+	preview: string;
 };
 
 export type HandoffMessageResponse = {

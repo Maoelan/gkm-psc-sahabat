@@ -1,5 +1,5 @@
 import { redirect } from '@sveltejs/kit';
-import { getStaffChatQueue } from '../../../lib/server/handoffs';
+import { getActiveChatSessions, getStaffChatQueue } from '../../../lib/server/handoffs';
 import { getServiceModeAt } from '../../../lib/server/service-mode';
 import { getStaffSession, hasStaffRole } from '../../../lib/server/staff-auth';
 
@@ -10,8 +10,13 @@ export async function load({ cookies }) {
 	const serviceMode = await getServiceModeAt();
 
 	try {
+		const [chats, activeChats] = await Promise.all([
+			getStaffChatQueue(staff),
+			getActiveChatSessions(staff)
+		]);
 		return {
-			chats: await getStaffChatQueue(staff),
+			chats,
+			activeChats,
 			csrfToken: staff.csrfToken,
 			isAdmin: staff.roles.includes('admin'),
 			serviceMode,
@@ -21,6 +26,7 @@ export async function load({ cookies }) {
 	} catch {
 		return {
 			chats: [],
+			activeChats: [],
 			csrfToken: staff.csrfToken,
 			isAdmin: staff.roles.includes('admin'),
 			serviceMode,

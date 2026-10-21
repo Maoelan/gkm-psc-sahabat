@@ -49,6 +49,15 @@ export type RecapReport = {
 	decidedAt?: string;
 };
 
+export type NikDirectoryEntry = {
+	id: string;
+	victimName: string;
+	nik: string;
+	receivedAt: string;
+	status: ReportStatus;
+	statusLabel: string;
+};
+
 export function statusLabel(status: ReportStatus) {
 	if (status === 'under_review') return 'Sedang diperiksa';
 	if (status === 'decision_recorded') return 'Keputusan tercatat';

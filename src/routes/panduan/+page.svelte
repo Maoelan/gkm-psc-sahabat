@@ -89,8 +89,8 @@
 				</li>
 				<li>
 					Nama korban dipakai pada alur laporan. NIK korban opsional; server hanya menampilkan NIK
-					penuh kepada bidan/PIC setelah tindakan dan mencatat aksesnya. Jangan masukkan foto
-					identitas atau alamat lengkap.
+					penuh kepada akun berwenang dengan peran admin setelah tindakan dan mencatat aksesnya.
+					Jangan masukkan foto identitas atau alamat lengkap.
 				</li>
 				<li>
 					Notifikasi petugas saat ini tercatat di antrean aplikasi. Pengiriman WhatsApp memerlukan

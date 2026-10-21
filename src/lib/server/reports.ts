@@ -5,7 +5,7 @@ import { decrypt, decryptJson, encrypt } from './crypto';
 import { isAiEnabled } from './env';
 import { recordAudit } from './audit';
 import { modeCopy, type ServiceMode } from '../service-mode';
-import { maskSensitiveText, type TranscriptMessage } from '../reports';
+import { maskSensitiveText, type NikDirectoryEntry, type TranscriptMessage } from '../reports';
 import { PRIVACY_NOTICE_VERSION, PRIVACY_PURPOSE } from '../privacy';
 import type { ReporterSession } from './session';
 import type { StaffSession } from './staff-auth';
@@ -730,6 +730,50 @@ export async function getNikForBidan(staff: StaffSession, referenceCode: string,
 		requestId
 	});
 	return { nik };
+}
+
+export async function getNikDirectory(
+	staff: StaffSession,
+	requestId?: string | null
+): Promise<NikDirectoryEntry[]> {
+	if (!staff.roles.includes('admin')) {
+		throw new ReportServiceError(403, 'nik_forbidden', 'Halaman NIK hanya untuk akun admin.');
+	}
+	const result = await db.query<
+		RecapRow & { nik_enc: Buffer | null; nik_iv: Buffer | null; nik_tag: Buffer | null }
+	>(
+		`${officerSelect.replace('rep.safe_contact_allowed,', 'rep.safe_contact_allowed, v.nik_last4, v.nik_enc, v.nik_iv, v.nik_tag,')}
+		 ORDER BY r.submitted_at DESC`
+	);
+	const entries = result.rows.map<NikDirectoryEntry>((row) => {
+		const mapped = mapRecap(row);
+		let nik = '';
+		if (row.nik_enc && row.nik_iv && row.nik_tag) {
+			try {
+				nik = decrypt(row.nik_enc, row.nik_iv, row.nik_tag, 'nik');
+			} catch {
+				nik = '';
+			}
+		}
+		return {
+			id: mapped.id,
+			victimName: mapped.victimName,
+			nik,
+			receivedAt: mapped.receivedAt,
+			status: mapped.status,
+			statusLabel: mapped.statusLabel
+		};
+	});
+	await recordAudit({
+		actorType: 'staff',
+		actorId: staff.staffId,
+		action: 'nik.directory.viewed',
+		objectType: 'nik_directory',
+		objectId: null,
+		requestId,
+		metadata: { reportCount: entries.length }
+	});
+	return entries;
 }
 
 export async function getRecapExportRows(staff: StaffSession, requestId?: string | null) {

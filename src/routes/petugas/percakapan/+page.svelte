@@ -4,6 +4,7 @@
 		handoffStatusCopy,
 		handoffStatusLabel,
 		isHandoffOpen,
+		type ActiveConversation,
 		type HandoffQueueItem,
 		type HandoffThreadMessage,
 		type StaffHandoff
@@ -18,6 +19,8 @@
 	// svelte-ignore state_referenced_locally
 	let chats = $state<HandoffQueueItem[]>(data.chats);
 	// svelte-ignore state_referenced_locally
+	let activeChats = $state<ActiveConversation[]>(data.activeChats);
+	// svelte-ignore state_referenced_locally
 	let loadError = $state(data.loadError);
 	let selectedId = $state('');
 	let handoff = $state<StaffHandoff | null>(null);
@@ -27,6 +30,7 @@
 	let error = $state('');
 	let notice = $state('');
 	let busy = $state(false);
+	let takingOverId = $state('');
 	let loadingThread = $state(false);
 	let polling = $state(false);
 	let detailsOpen = $state(false);
@@ -111,12 +115,14 @@
 			const payload = (await response.json().catch(() => ({}))) as {
 				error?: string;
 				chats?: HandoffQueueItem[];
+				active?: ActiveConversation[];
 			};
 			if (!response.ok) throw new Error(payload.error || 'Antrean tidak dapat dimuat.');
 			chats = Array.isArray(payload.chats) ? payload.chats : [];
+			activeChats = Array.isArray(payload.active) ? payload.active : [];
 			loadError = false;
 		} catch {
-			if (!chats.length) loadError = true;
+			if (!chats.length && !activeChats.length) loadError = true;
 		}
 	}
 
@@ -168,6 +174,34 @@
 			return;
 		}
 		await loadThread(chat.id);
+	}
+
+	async function takeoverChat(chat: ActiveConversation) {
+		if (busy) return;
+		busy = true;
+		takingOverId = chat.sessionId;
+		error = '';
+		notice = '';
+		try {
+			const payload = (await staffPost(
+				`/api/staff/conversations/${encodeURIComponent(chat.sessionId)}/takeover`
+			)) as { handoff?: StaffHandoff };
+			if (!payload.handoff) throw new Error('Percakapan belum dapat diambil alih.');
+			handoff = payload.handoff;
+			selectedId = payload.handoff.id;
+			messages = [];
+			cursor = '';
+			detailsOpen = true;
+			notice = 'Percakapan diambil alih. AI dijeda dan pelapor melihat petugas bergabung.';
+			await loadThread(selectedId);
+			await refreshQueue();
+		} catch (caught) {
+			error = caught instanceof Error ? caught.message : 'Percakapan belum dapat diambil alih.';
+			await refreshQueue();
+		} finally {
+			busy = false;
+			takingOverId = '';
+		}
 	}
 
 	async function claimChat() {
@@ -318,8 +352,9 @@
 				<p class="eyebrow">Meja petugas</p>
 				<h1>Percakapan langsung</h1>
 				<p>
-					Masuk sebagai <strong>{data.staff.displayName}</strong>. Ambil permintaan pelapor,
-					balas di thread yang sama, lalu tutup percakapan saat selesai.
+					Masuk sebagai <strong>{data.staff.displayName}</strong>. Ambil permintaan pelapor atau
+					percakapan yang sedang berjalan, balas di thread yang sama, lalu tutup percakapan saat
+					selesai.
 				</p>
 			</div>
 			<div class="live-title-actions">
@@ -329,11 +364,12 @@
 		</header>
 
 		<div class="live-notice">
-			<strong>Akses terbatas.</strong>
+			<strong>Akses admin.</strong>
 			<span>
-				Hanya petugas dan admin. Permintaan muncul setelah pelapor menekan tombol bantuan saat
-				jam layanan; petugas tidak mengambil alih percakapan tanpa permintaan. NIK, nomor, dan
-				email disamarkan. Setiap pembukaan transkrip, balasan, dan penutupan dicatat dalam audit.
+				Petugas, bidan, dan admin memakai akses admin. Permintaan bantuan dan percakapan yang
+				sedang berjalan tampil di antrean; ambil alih percakapan untuk menjeda AI. NIK, nomor, dan
+				email disamarkan di percakapan. Setiap pembukaan transkrip, pengambilalihan, balasan, dan
+				penutupan dicatat dalam audit.
 			</span>
 		</div>
 
@@ -341,7 +377,8 @@
 			<div class="live-hours" role="status">
 				<strong>Di luar jam layanan.</strong>
 				<span>
-					Pelapor belum dapat meminta bantuan petugas. Jam layanan: {SERVICE_HOURS_LABEL}.
+					Pelapor belum dapat mengirim permintaan bantuan baru. Percakapan aktif tetap dapat
+					diambil alih oleh admin. Jam layanan: {SERVICE_HOURS_LABEL}.
 				</span>
 			</div>
 		{:else if data.serviceMode === 'unavailable'}
@@ -365,17 +402,54 @@
 					<div class="live-queue-head">
 						<div>
 							<h2>Antrean</h2>
-							<span>{waitingCount} menunggu · {activeCount} aktif</span>
+							<span
+								>{waitingCount} menunggu · {activeCount} aktif · {activeChats.length} percakapan
+								berjalan</span
+							>
 						</div>
 						<button class="link-button" type="button" onclick={refreshQueue}>Muat ulang</button>
 					</div>
 
+					{#if error && !detailsOpen}
+						<p class="live-error queue-error" role="alert">{error}</p>
+					{/if}
+
+					{#if activeChats.length > 0}
+						<section class="live-active" aria-labelledby="active-chats-title">
+							<div class="live-active-head">
+								<div>
+									<h3 id="active-chats-title">Percakapan aktif</h3>
+									<span>{activeChats.length} percakapan berjalan</span>
+								</div>
+								<span class="live-active-note">Bisa diambil alih</span>
+							</div>
+							{#each activeChats as chat (chat.sessionId)}
+								<button
+									class="live-row active-row"
+									type="button"
+									onclick={() => takeoverChat(chat)}
+									disabled={busy}
+								>
+									<span class="live-row-top">
+										<span class="live-status active-status">Berjalan</span>
+										<span class="live-age">{relativeTime(chat.lastMessageAt)}</span>
+									</span>
+									<strong>{chat.preview || 'Belum ada pesan pelapor'}</strong>
+									<span class="live-row-meta">{chat.messageCount} pesan pelapor</span>
+									<span class="takeover-label">
+										{takingOverId === chat.sessionId ? 'Mengambil alih...' : 'Ambil alih'}
+									</span>
+								</button>
+							{/each}
+						</section>
+					{/if}
+
 					{#if chats.length === 0}
 						<div class="live-empty">
-							<h3>Belum ada permintaan</h3>
+							<h3>Belum ada permintaan bantuan</h3>
 							<p>
-								Antrean hanya berisi permintaan yang dikirim pelapor lewat tombol “Minta bantuan
-								petugas” pada jam layanan. Petugas tidak mengambil alih percakapan secara diam-diam.
+								Pelapor belum menekan tombol “Minta bantuan petugas”. Percakapan yang sedang
+								berjalan tetap tampil di atas dan dapat diambil alih.
 							</p>
 						</div>
 					{:else}
@@ -422,8 +496,8 @@
 						<div class="live-empty thread-empty">
 							<h2>Pilih percakapan</h2>
 							<p>
-								Buka permintaan baru untuk mengambilnya, atau lanjutkan percakapan yang sedang
-								Anda tangani.
+								Ambil percakapan aktif dari antrean, buka permintaan baru, atau lanjutkan
+								percakapan yang sedang Anda tangani.
 							</p>
 						</div>
 					{:else if !handoff && selected?.status === 'waiting'}
@@ -606,6 +680,38 @@
 	.live-queue-head h2 { margin: 0; font-size: 1.05rem; }
 	.live-queue-head span { display: block; margin-top: 2px; color: var(--muted); font-size: 0.78rem; }
 	.live-queue-head .link-button { min-height: 38px; font-size: 0.8rem; }
+	.queue-error { margin: 10px 16px; }
+	.live-active { border-bottom: 1px solid #cfe5df; background: #f2fbf8; }
+	.live-active-head {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 10px;
+		padding: 12px 16px 9px;
+	}
+	.live-active-head h3 { margin: 0; font-size: 0.92rem; }
+	.live-active-head > div > span { display: block; margin-top: 2px; color: var(--muted); font-size: 0.72rem; }
+	.live-active-note {
+		flex: 0 0 auto;
+		padding: 2px 7px;
+		border-radius: 999px;
+		background: #dff0ed;
+		color: #075f5a;
+		font-size: 0.66rem;
+		font-weight: 800;
+	}
+	.active-row { background: #fff; border-bottom: 1px solid #d7e9e4; }
+	.active-row:hover { background: #edf9f5; }
+	.active-row:disabled { cursor: wait; opacity: 0.75; }
+	.active-row strong {
+		display: -webkit-box;
+		overflow: hidden;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+	}
+	.active-status { background: #e6f4ff; color: #164b74; }
+	.takeover-label { margin-top: 2px; color: var(--magenta-dark); font-size: 0.74rem; font-weight: 800; }
 	.live-row {
 		display: grid;
 		gap: 4px;

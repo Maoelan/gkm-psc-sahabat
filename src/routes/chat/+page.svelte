@@ -1129,7 +1129,8 @@
 				<p class="step-kicker">Langkah 1 dari 3 · Data minimum</p> <!-- taste-skill-ignore: label progres fungsional -->
 				<h2 id="identity-title" tabindex="-1" bind:this={identityHeading}>Sedikit tentang korban</h2>
 				<p class="identity-lead">
-					Nama korban wajib diisi. NIK opsional dan hanya dapat dilihat bidan/PIC.
+					Nama korban wajib diisi. NIK opsional dan hanya dapat dilihat akun berwenang untuk
+					tindak lanjut.
 				</p>
 
 				<fieldset class="relation-field">
@@ -1197,8 +1198,8 @@
 						aria-describedby="nik-help"
 					/>
 					<p id="nik-help" class="field-help">
-						Hanya bidan/PIC yang dapat melihat NIK untuk tindak lanjut. Setiap pembukaan dicatat
-						dalam audit.
+						Hanya akun berwenang yang dapat membuka NIK untuk tindak lanjut. Setiap pembukaan
+						dicatat dalam audit.
 					</p>
 				</div>
 
@@ -1522,8 +1523,8 @@
 								</p>
 							{/if}
 							<p id="review-nik-help" class="field-help">
-								Hanya bidan/PIC yang dapat membuka NIK untuk tindak lanjut. NIK tidak
-								ditampilkan di meja petugas umum.
+								Hanya akun berwenang yang dapat membuka NIK untuk tindak lanjut. NIK tidak
+								ditampilkan di daftar meja petugas.
 							</p>
 						</div>
 						<label class="field"
@@ -1623,8 +1624,8 @@
 						<li>Tujuan: menyiapkan dan memeriksa pengaduan.</li>
 						<li>Data: cerita, ringkasan, nama/hubungan, NIK opsional, dan preferensi kontak.</li>
 						<li>
-							Akses NIK: hanya akun bidan/PIC yang dapat membuka NIK. Meja petugas umum tidak
-							menampilkan NIK. Setiap pembukaan dicatat dalam audit.
+							Akses NIK: hanya akun berwenang dengan peran admin yang dapat membuka NIK. Daftar
+							meja petugas tidak menampilkan NIK. Setiap pembukaan dicatat dalam audit.
 						</li>
 						<li>Akses: hanya akun staff yang masuk dan memiliki peran sesuai.</li>
 						<li>
