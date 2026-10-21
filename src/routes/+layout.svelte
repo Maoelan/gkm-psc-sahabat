@@ -17,6 +17,13 @@
 			? '/rekap'
 			: '/petugas'
 	);
+	const recapHref = $derived(
+		data.staff?.roles.includes('bidan_pic') || data.staff?.roles.includes('admin')
+			? '/rekap'
+			: data.staff
+				? '/petugas/ganti-akun'
+				: '/rekap'
+	);
 
 	function openMenu() {
 		menuOpen = true;
@@ -88,6 +95,14 @@
 					<a href={staffHome} aria-current={page.url.pathname === staffHome ? 'page' : undefined}>
 						Ruang kerja
 					</a>
+					{#if data.staff.roles.includes('petugas') || data.staff.roles.includes('admin')}
+						<a
+							href="/petugas/percakapan"
+							aria-current={page.url.pathname === '/petugas/percakapan' ? 'page' : undefined}
+						>
+							Percakapan
+						</a>
+					{/if}
 					{#if data.staff.roles.includes('admin')}
 						<a href="/petugas" aria-current={page.url.pathname === '/petugas' ? 'page' : undefined}>
 							Meja petugas
@@ -121,6 +136,9 @@
 				{/each}
 				{#if data.staff}
 					<a href={staffHome} onclick={() => closeMenu()}>Ruang kerja {data.staff.displayName}</a>
+					{#if data.staff.roles.includes('petugas') || data.staff.roles.includes('admin')}
+						<a href="/petugas/percakapan" onclick={() => closeMenu()}>Percakapan langsung</a>
+					{/if}
 					<form method="POST" action="/masuk?/logout">
 						<input type="hidden" name="csrfToken" value={data.staff.csrfToken} />
 						<button class="mobile-logout" type="submit">Keluar dari sesi petugas</button>
@@ -129,7 +147,7 @@
 					<a href="/masuk" onclick={() => closeMenu()}>Masuk petugas</a>
 				{/if}
 				<a href="/petugas" onclick={() => closeMenu()}>Meja petugas</a>
-				<a href="/rekap" onclick={() => closeMenu()}>Rekap bidan/PIC</a>
+				<a href={recapHref} onclick={() => closeMenu()}>Rekap bidan/PIC</a>
 			</nav>
 			<p>Keluar cepat mengakhiri sesi server bila memungkinkan, tetapi tidak menghapus riwayat browser atau jejak perangkat.</p>
 		</div>

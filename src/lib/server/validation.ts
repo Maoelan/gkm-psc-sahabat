@@ -50,6 +50,14 @@ export const chatTurnSchema = z.object({
 	userMessage: z.string().trim().max(2000).optional()
 });
 
+export const handoffMessageSchema = z.object({
+	body: z
+		.string()
+		.trim()
+		.min(1, 'Tulis pesan terlebih dahulu.')
+		.max(2000, 'Pesan terlalu panjang. Maksimal 2000 karakter.')
+});
+
 export const reviewSchema = z.object({
 	notes: z
 		.string()

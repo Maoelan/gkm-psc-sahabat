@@ -2,8 +2,8 @@ export type ReportStatus = 'submitted' | 'under_review' | 'decision_recorded';
 export type Decision = 'follow_up_required' | 'follow_up_not_required';
 export type ServiceMode = 'operator' | 'ai' | 'unavailable';
 
-export type TranscriptSender = 'user' | 'assistant' | 'service';
-export type TranscriptSource = 'user' | 'ai' | 'fallback' | 'guide';
+export type TranscriptSender = 'user' | 'assistant' | 'service' | 'staff';
+export type TranscriptSource = 'user' | 'ai' | 'fallback' | 'guide' | 'staff' | 'handoff';
 export type TranscriptMessage = {
 	id: string;
 	sender: TranscriptSender;

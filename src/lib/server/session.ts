@@ -60,11 +60,21 @@ export async function requireSession(cookies: Cookies): Promise<ReporterSession 
 export async function endSession(cookies: Cookies) {
 	const secret = cookies.get(SESSION_COOKIE);
 	if (secret) {
-		await db.query(
+		const result = await db.query<{ id: string }>(
 			`UPDATE chat_sessions SET status = 'ended', ended_at = now()
-			 WHERE session_secret_hash = $1 AND status = 'active'`,
+			 WHERE session_secret_hash = $1 AND status = 'active'
+			 RETURNING id`,
 			[hashSecret(secret)]
 		);
+		const sessionId = result.rows[0]?.id;
+		if (sessionId) {
+			await db.query(
+				`UPDATE chat_handoffs
+				 SET status = 'cancelled', closed_at = now(), close_reason = 'session_ended'
+				 WHERE session_id = $1 AND status IN ('waiting', 'active')`,
+				[sessionId]
+			);
+		}
 	}
 	cookies.delete(SESSION_COOKIE, { path: '/' });
 }

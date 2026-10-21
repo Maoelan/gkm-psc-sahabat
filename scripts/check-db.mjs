@@ -46,7 +46,18 @@ try {
 		`SELECT count(*)::int AS count FROM information_schema.tables
 		 WHERE table_schema = 'public'`
 	);
-	check('Tabel aplikasi tersedia', Number(tables.rows[0].count) >= 17, `${tables.rows[0].count} tabel`);
+	check('Tabel aplikasi tersedia', Number(tables.rows[0].count) >= 18, `${tables.rows[0].count} tabel`);
+
+	const handoffSchema = await client.query(
+		`SELECT count(*)::int AS columns
+		 FROM information_schema.columns
+		 WHERE table_schema = 'public' AND table_name = 'chat_handoffs'`
+	);
+	check(
+		'Skema handoff petugas tersedia',
+		Number(handoffSchema.rows[0].columns) >= 9,
+		`${handoffSchema.rows[0].columns} kolom`
+	);
 
 	const staff = await client.query(
 		`SELECT su.username, array_agg(sr.role ORDER BY sr.role) AS roles
@@ -85,6 +96,18 @@ try {
 		Number(transcripts.rows[0].count) >= 3 &&
 			Number(transcripts.rows[0].missing_source) === 0,
 		`${transcripts.rows[0].count} pesan, ${transcripts.rows[0].sessions} sesi`
+	);
+
+	const messageConstraints = await client.query(
+		`SELECT pg_get_constraintdef(c.oid) AS definition
+		 FROM pg_constraint c
+		 JOIN pg_class t ON t.oid = c.conrelid
+		 WHERE t.relname = 'chat_messages' AND c.contype = 'c'`
+	);
+	const definitions = messageConstraints.rows.map((item) => item.definition).join(' ');
+	check(
+		'Pesan staff dan handoff diizinkan',
+		definitions.includes("'staff'") && definitions.includes("'handoff'")
 	);
 
 	const sample = await client.query(

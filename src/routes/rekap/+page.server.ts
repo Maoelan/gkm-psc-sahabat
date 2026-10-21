@@ -7,7 +7,7 @@ export async function load({ cookies }) {
 	if (!staff) {
 		return { authenticated: false, reports: [], csrfToken: null, outbox: null, loadError: false };
 	}
-	if (!hasStaffRole(staff, ['bidan_pic', 'admin'])) redirect(303, '/petugas');
+	if (!hasStaffRole(staff, ['bidan_pic', 'admin'])) redirect(303, '/petugas/ganti-akun');
 
 	try {
 		const [reports, outbox] = await Promise.all([getRecapReports(), getOutboxSummary()]);

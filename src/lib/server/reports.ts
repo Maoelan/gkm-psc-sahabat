@@ -430,6 +430,21 @@ export async function submitReport(
 	}
 
 	return transaction(async (client) => {
+		await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [session.id]);
+		await client.query('SELECT id FROM chat_sessions WHERE id = $1 FOR UPDATE', [session.id]);
+		const openHandoff = await client.query(
+			`SELECT 1 FROM chat_handoffs
+			 WHERE session_id = $1 AND status IN ('waiting', 'active')
+			 LIMIT 1`,
+			[session.id]
+		);
+		if (openHandoff.rowCount) {
+			throw new ReportServiceError(
+				409,
+				'handoff_open',
+				'Bantuan petugas masih terbuka. Selesaikan percakapan dengan petugas sebelum mengirim laporan.'
+			);
+		}
 		const draftResult = await client.query<{
 			id: string;
 			content_enc: Buffer;

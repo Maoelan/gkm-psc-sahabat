@@ -53,7 +53,7 @@ try {
 		await client.query(`TRUNCATE TABLE
 			audit_events, notification_outbox, privacy_acknowledgements, report_decisions,
 			report_reviews, report_assignments, reports, reporter_details, victim_details,
-			report_drafts, chat_messages, chat_sessions, staff_sessions, staff_roles,
+			report_drafts, chat_messages, chat_handoffs, chat_sessions, staff_sessions, staff_roles,
 			staff_users, schedule_exceptions, service_schedules
 			RESTART IDENTITY CASCADE`);
 	}

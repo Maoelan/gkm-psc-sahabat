@@ -18,10 +18,19 @@
 				lain.
 			</p>
 
+			{#if data.switched}
+				<div class="login-switch-note" role="status">
+					<strong>Sesi petugas sudah diakhiri.</strong>
+					<p>Masuk dengan akun bidan/PIC untuk membuka rekap.</p>
+				</div>
+			{/if}
+
 			<div class="login-notice">
-				<strong>Akses terbatas.</strong>
+				<strong>{data.next === '/rekap' ? 'Rekap hanya untuk bidan/PIC.' : 'Akses terbatas.'}</strong>
 				<p>
-					NIK hanya dapat dibuka oleh akun bidan/PIC dan setiap pembukaan tercatat dalam audit.
+					{data.next === '/rekap'
+						? 'Akun petugas tidak dapat membuka halaman rekap atau NIK. Masuk dengan akun bidan/PIC yang diberikan admin layanan.'
+						: 'NIK hanya dapat dibuka oleh akun bidan/PIC dan setiap pembukaan tercatat dalam audit.'}
 				</p>
 			</div>
 
@@ -122,6 +131,15 @@
 		font-size: 0.9rem;
 	}
 	.login-notice p { margin: 4px 0 0; }
+	.login-switch-note {
+		margin-top: 22px;
+		padding: 15px 17px;
+		border-left: 4px solid var(--teal);
+		background: var(--surface-teal);
+		color: #214f4e;
+		font-size: 0.9rem;
+	}
+	.login-switch-note p { margin: 4px 0 0; }
 	.login-form { display: grid; gap: 16px; margin-top: 24px; }
 	.field { display: grid; gap: 7px; }
 	.field label { font-size: 0.9rem; font-weight: 800; }

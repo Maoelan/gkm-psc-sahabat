@@ -129,6 +129,8 @@
 
 	function transcriptLabel(message: TranscriptMessage) {
 		if (message.source === 'user') return 'Pelapor';
+		if (message.source === 'staff') return 'Petugas LAPOR AMAN';
+		if (message.source === 'handoff') return 'LAPOR AMAN';
 		if (message.source === 'ai') return 'Asisten AI';
 		return 'Panduan LAPOR AMAN';
 	}
@@ -181,7 +183,10 @@
 				</p>
 			</div>
 			<div class="staff-title-actions">
-				<a class="button-secondary" href="/masuk?next=/rekap">Rekap bidan/PIC</a>
+				<a class="button-primary" href="/petugas/percakapan">Percakapan langsung</a>
+				<a class="button-secondary" href="/petugas/ganti-akun" title="Beralih ke akun bidan/PIC"
+					>Rekap bidan/PIC</a
+				>
 				<a class="button-secondary" href="/">Kembali ke portal publik</a>
 			</div>
 		</header>
@@ -191,8 +196,9 @@
 				<strong>Akses terbatas.</strong>
 				<span>
 					NIK tidak ditampilkan di meja petugas. Hanya akun bidan/PIC yang dapat membukanya di
-					<a href="/masuk?next=/rekap">halaman rekap terbatas</a>. Server memeriksa sesi, peran,
-					hak akses laporan, dan token CSRF pada setiap permintaan.
+					<a href="/petugas/ganti-akun">halaman rekap terbatas</a>. Bantuan percakapan langsung
+					juga dibatasi untuk petugas dan admin. Server memeriksa sesi, peran, hak akses
+					laporan, dan token CSRF pada setiap permintaan.
 				</span>
 			</div>
 		</div>
@@ -278,7 +284,7 @@
 						<strong>NIK tidak ditampilkan di meja petugas.</strong>
 						<p>
 							Hanya akun bidan/PIC yang dapat membuka NIK di
-							<a href="/masuk?next=/rekap">halaman rekap terbatas</a>. Pembukaan NIK dicatat
+							<a href="/petugas/ganti-akun">halaman rekap terbatas</a>. Pembukaan NIK dicatat
 							dalam audit.
 						</p>
 					</div>
@@ -495,6 +501,7 @@
 		.staff-workspace { padding: 24px 20px; }
 		.staff-title, .staff-controls { align-items: start; grid-template-columns: 1fr; flex-direction: column; }
 		.staff-title-actions { width: 100%; justify-content: flex-start; }
+		.staff-title .button-primary,
 		.staff-title .button-secondary { width: 100%; }
 		.staff-notice { align-items: flex-start; flex-direction: column; }
 		.inbox-grid { display: block; min-height: 0; }

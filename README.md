@@ -9,6 +9,7 @@ Portal pengaduan GKM PSC SAHABAT, UPT Puskesmas Suranadi. Versi ini memakai back
 - Penyimpanan sesi, draf, laporan, keputusan, audit, riwayat percakapan, dan outbox notifikasi di PostgreSQL.
 - Login staff lokal dengan sesi server, cookie HttpOnly, CSRF, pembatasan percobaan, peran, dan audit.
 - Meja petugas `/petugas` untuk laporan dalam penugasan akun. Admin dapat meninjau seluruh laporan.
+- Bantuan petugas langsung `/petugas/percakapan`: pelapor dapat meminta petugas saat jam layanan, petugas mengambil percakapan, membalas, dan menutupnya. AI dijeda selama handoff aktif, dan tombol Selesai pelapor dikunci sampai percakapan petugas ditutup.
 - Riwayat percakapan di meja petugas, dengan otorisasi petugas yang ditugaskan/admin dan audit setiap pembukaan.
 - Rekap `/rekap` khusus peran `bidan_pic`/`admin`, termasuk pembukaan NIK yang tercatat di audit.
 - Export `.xlsx` dibuat di server; sheet `Rekap` tidak memuat NIK dan sheet `Identitas` memuat NIK khusus bidan/PIC.
@@ -54,6 +55,8 @@ npm run db:check
 npm run dev
 ```
 
+Untuk menguji bantuan petugas di luar jam layanan pada server pengembangan, buka `/chat?mode=operator`. Override ini tidak aktif pada build produksi; pada jam layanan normal, tombol bantuan petugas muncul otomatis.
+
 Untuk build produksi lokal:
 
 ```sh
@@ -65,8 +68,10 @@ npm run start
 
 ## Akun staff lokal
 
-- `petugas`: antrean meja petugas dan riwayat percakapan yang ditugaskan.
-- `bidan`: rekap dan pembukaan NIK.
+- `petugas`: antrean meja petugas, bantuan percakapan langsung, dan riwayat percakapan yang ditugaskan.
+- `bidan`: rekap dan pembukaan NIK. Peran ini tidak membuka percakapan langsung.
+
+Akun `petugas` yang membuka `/rekap` diarahkan ke `/petugas/ganti-akun` untuk mengakhiri sesi petugas lalu masuk dengan akun bidan/PIC. Halaman rekap tidak dapat dibuka dengan sesi petugas.
 
 Kata sandi tidak ditulis di repositori atau halaman publik. Nilainya diatur melalui `DEMO_STAFF_PETUGAS_PASSWORD` dan `DEMO_STAFF_BIDAN_PASSWORD` di `.env`, lalu dipakai oleh seed. Ganti sebelum presentasi.
 
@@ -112,7 +117,9 @@ Untuk pengiriman nyata, isi kredensial Meta Cloud API atau Twilio dan nomor tuju
 - Enkripsi dan kontrol akses server sudah diterapkan untuk demo, tetapi tidak menjadikan NIK aman untuk data nyata. File `.xlsx` yang sudah diunduh berada di luar kendali aplikasi.
 - Petugas tidak menerima NIK atau kontak lengkap. Pembukaan NIK oleh bidan/PIC dicatat di `audit_events`.
 - Riwayat percakapan hanya dapat dibuka oleh petugas yang ditugaskan atau admin. Setiap pembukaan dicatat sebagai `report.chat_transcript.viewed`.
+- Percakapan langsung hanya untuk peran `petugas` dan `admin`. `bidan_pic` tidak membuka percakapan langsung. Setiap pembukaan thread, balasan, dan penutupan dicatat dalam audit; NIK, nomor, dan email disamarkan.
 - AI boleh menanggapi pertanyaan pelapor tentang alur proyek dan menanyakan satu topik pelengkap tentang waktu, lokasi umum, atau kebutuhan yang belum terisi. AI tidak memberi nasihat, diagnosis, bantuan hukum, keputusan, atau meminta identitas. Tombol Selesai tetap menjadi keputusan pelapor untuk membuka draf.
+- Selama handoff `waiting` atau `active`, server menolak giliran AI dan pengiriman laporan. Handoff hanya dapat diminta pada mode/jam layanan operator.
 - Integrasi Dinas Sosial, visum, pendampingan, dan rujukan tidak ada dan tidak diklaim.
 - Jangan gunakan data korban nyata, nomor nyata, atau NIK asli pada lingkungan ini.
 
@@ -133,6 +140,7 @@ Dokumen internal (PRD, product, QA, desain, dan audit) tidak disertakan di repo 
 
 - `db/001_initial.sql`: skema, constraint, dan indeks.
 - `db/002_chat_transcript.sql`: sumber pesan untuk riwayat percakapan petugas.
+- `db/003_staff_handoff.sql`: handoff pelapor-petugas, pesan staff, dan satu handoff terbuka per sesi.
 - `scripts/migrate.mjs`: runner migrasi dengan `schema_migrations`.
 - `scripts/seed-demo.mjs`: seed idempoten dan reset demo ter guarding.
 - `src/lib/server/`: akses database, enkripsi, sesi, autentikasi staff, laporan, AI, export, dan audit.

@@ -1,17 +1,32 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { tick } from 'svelte';
-	import { modeCopy, type ServiceMode } from '../../lib/service-mode';
+	import { dev } from '$app/env';
+	import { onMount, tick } from 'svelte';
+	import { modeCopy, SERVICE_HOURS_LABEL, type ServiceMode } from '../../lib/service-mode';
 	import { isValidNik, maskNik, normalizeNik } from '../../lib/reports';
+	import {
+		handoffStatusCopy,
+		handoffStatusLabel,
+		isHandoffOpen,
+		type HandoffThreadMessage,
+		type ReporterHandoff
+	} from '../../lib/handoff';
 	import { PRIVACY_NOTICE_VERSION } from '../../lib/privacy';
 	import type { PageProps } from './$types';
 
 	type Stage = 'start' | 'identity' | 'chat' | 'review' | 'receipt';
 	type ChatStep = 'story' | 'time' | 'location' | 'need' | 'open';
-	type Sender = 'assistant' | 'user';
+	type Sender = 'assistant' | 'user' | 'staff' | 'service';
 	type FollowUpSource = 'nvidia' | 'fallback' | 'guide';
+	type MessageSource = FollowUpSource | 'staff' | 'handoff' | 'user' | 'ai';
 	type MissingField = 'incident_time' | 'incident_location' | 'need';
-	type Message = { id: number; sender: Sender; body: string; source?: FollowUpSource };
+	type Message = {
+		id: number;
+		serverId?: string;
+		sender: Sender;
+		body: string;
+		source?: MessageSource;
+	};
 	type ChatSession = { csrfToken: string };
 
 	let { data }: PageProps = $props();
@@ -30,6 +45,13 @@
 	let draftId = $state('');
 	let draftVersion = $state(0);
 	let idempotencyKey = $state('');
+	let handoff = $state<ReporterHandoff | null>(null);
+	let handoffError = $state('');
+	let handoffBusy = $state(false);
+	let lastHandoffMessageId = $state('');
+	let handoffPolling = $state(false);
+	let handoffTimer: ReturnType<typeof setTimeout> | undefined;
+	let pageMounted = $state(false);
 
 	let nextMessageId = 1;
 	let stage = $state<Stage>('start');
@@ -76,38 +98,46 @@
 	const isFieldStep = $derived(
 		chatStep === 'time' || chatStep === 'location' || chatStep === 'need'
 	);
+	const handoffOpen = $derived(isHandoffOpen(handoff?.status));
+	const handoffAvailable = $derived(serviceMode === 'operator');
 	const progressLabel = $derived(
-		chatStep === 'story'
-			? 'Tahap 1 dari 3: cerita inti'
-			: chatStep === 'open'
-				? 'Tahap 3 dari 3: periksa draf'
-				: 'Tahap 2 dari 3: pertanyaan pelengkap'
+		handoffOpen
+			? 'Bantuan petugas aktif'
+			: chatStep === 'story'
+				? 'Tahap 1 dari 3: cerita inti'
+				: chatStep === 'open'
+					? 'Tahap 3 dari 3: periksa draf'
+					: 'Tahap 2 dari 3: pertanyaan pelengkap'
 	);
 	const composerLabel = $derived(
-		addingStory
-			? 'Tambah cerita'
-			: chatStep === 'story'
-				? 'Tulis cerita Anda'
-				: chatStep === 'open'
-					? 'Tanggapan atau tambahan'
-					: chatStep === 'time'
-						? 'Waktu kejadian'
-						: chatStep === 'location'
-							? 'Lokasi umum'
-							: 'Bantuan yang diharapkan'
+		handoffOpen
+			? 'Tulis pesan untuk petugas'
+			: addingStory
+				? 'Tambah cerita'
+				: chatStep === 'story'
+					? 'Tulis cerita Anda'
+					: chatStep === 'open'
+						? 'Tanggapan atau tambahan'
+						: chatStep === 'time'
+							? 'Waktu kejadian'
+							: chatStep === 'location'
+								? 'Lokasi umum'
+								: 'Bantuan yang diharapkan'
 	);
 	const composerPlaceholder = $derived(
-		addingStory
-			? 'Tambahkan bagian cerita yang belum sempat Anda tulis.'
-			: chatStep === 'story'
-				? 'Ceritakan dengan kata-kata sendiri. Boleh belum lengkap.'
-				: chatStep === 'open'
-					? 'Tulis tanggapan, pertanyaan, atau tambahan cerita.'
-					: chatStep === 'time'
-						? 'Contoh: kemarin sore'
-						: chatStep === 'location'
-							? 'Contoh: di rumah'
-							: 'Tulis kebutuhan Anda, atau pilih salah satu di atas.'
+		handoffOpen
+			? 'Tulis pesan untuk petugas. Jangan kirim NIK atau kontak lengkap di sini.'
+			: addingStory
+				? 'Tambahkan bagian cerita yang belum sempat Anda tulis.'
+				: chatStep === 'story'
+					? 'Ceritakan dengan kata-kata sendiri. Boleh belum lengkap.'
+					: chatStep === 'open'
+						? 'Tulis tanggapan, pertanyaan, atau tambahan cerita.'
+						: chatStep === 'time'
+							? 'Contoh: kemarin sore'
+							: chatStep === 'location'
+								? 'Contoh: di rumah'
+								: 'Tulis kebutuhan Anda, atau pilih salah satu di atas.'
 	);
 	const unknownFields = $derived.by(() => {
 		const fields: string[] = [];
@@ -115,6 +145,23 @@
 		if (!incidentLocation.trim() || incidentLocation === 'Belum diketahui') fields.push('Lokasi umum');
 		if (!need.trim() || need === 'Belum diketahui') fields.push('Bantuan yang diharapkan');
 		return fields;
+	});
+
+	function handleHandoffVisibility() {
+		if (document.hidden) {
+			clearHandoffTimer();
+			return;
+		}
+		if (handoffOpen) scheduleHandoffPoll(800);
+	}
+
+	onMount(() => {
+		pageMounted = true;
+		document.addEventListener('visibilitychange', handleHandoffVisibility);
+		return () => {
+			document.removeEventListener('visibilitychange', handleHandoffVisibility);
+			if (handoffTimer) clearTimeout(handoffTimer);
+		};
 	});
 
 	function prefersReducedMotion() {
@@ -132,9 +179,39 @@
 		});
 	}
 
-	async function addMessage(sender: Sender, body: string, source?: FollowUpSource) {
-		messages.push({ id: nextMessageId++, sender, body, source });
+	async function addMessage(
+		sender: Sender,
+		body: string,
+		source?: MessageSource,
+		serverId?: string
+	) {
+		const message: Message = { id: nextMessageId++, sender, body, source, serverId };
+		messages.push(message);
 		await scrollToLatest();
+		return message;
+	}
+
+	async function mergeHandoffMessages(items: HandoffThreadMessage[]) {
+		let added = false;
+		for (const item of items) {
+			if (messages.some((message) => message.serverId === item.id)) continue;
+			messages.push({
+				id: nextMessageId++,
+				serverId: item.id,
+				sender:
+					item.sender === 'staff'
+						? 'staff'
+						: item.sender === 'service'
+							? 'service'
+							: item.sender === 'assistant'
+								? 'assistant'
+								: 'user',
+				body: item.body,
+				source: item.source
+			});
+			added = true;
+		}
+		if (added) await scrollToLatest();
 	}
 
 	async function focusComposer() {
@@ -237,6 +314,8 @@
 
 	function messageLabel(message: Message) {
 		if (message.sender === 'user') return 'Anda';
+		if (message.sender === 'staff') return 'Petugas LAPOR AMAN';
+		if (message.sender === 'service' || message.source === 'handoff') return 'LAPOR AMAN';
 		if (message.source === 'guide') return 'Panduan LAPOR AMAN';
 		if (message.source === 'fallback' && serviceMode === 'ai' && aiEnabled) {
 			return 'Panduan LAPOR AMAN';
@@ -273,6 +352,7 @@
 			});
 			const payload = (await response.json().catch(() => ({}))) as {
 				error?: string;
+				code?: string;
 				flowComplete?: boolean;
 				message?: string | null;
 				question?: string | null;
@@ -280,6 +360,9 @@
 				missingField?: MissingField | null;
 			};
 			if (!response.ok) {
+				if (payload.code === 'handoff_open') {
+					await pollHandoff(true);
+				}
 				throw new Error(payload.error || 'Pertanyaan berikutnya belum dapat dimuat.');
 			}
 			const source = sourceForPayload(payload.source);
@@ -321,6 +404,176 @@
 		} finally {
 			busy = false;
 		}
+	}
+
+	function clearHandoffTimer() {
+		if (handoffTimer) {
+			clearTimeout(handoffTimer);
+			handoffTimer = undefined;
+		}
+	}
+
+	function scheduleHandoffPoll(delay = 3500) {
+		clearHandoffTimer();
+		if (!pageMounted || !handoffOpen) return;
+		handoffTimer = setTimeout(() => {
+			void pollHandoff();
+		}, delay);
+	}
+
+	async function requestHandoff() {
+		if (handoffBusy || handoffOpen) return;
+		if (!(await ensureSession()) || !chatSession) return;
+		handoffBusy = true;
+		handoffError = '';
+		try {
+			const response = await fetch('/api/chat/handoff', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'x-csrf-token': chatSession.csrfToken
+				},
+				body: '{}'
+			});
+			const payload = (await response.json().catch(() => ({}))) as {
+				error?: string;
+				handoff?: ReporterHandoff;
+				message?: HandoffThreadMessage | null;
+				latestMessageId?: string | null;
+			};
+			if (!response.ok || !payload.handoff) {
+				throw new Error(payload.error || 'Bantuan petugas belum dapat diminta.');
+			}
+			handoff = payload.handoff;
+			addingStory = false;
+			if (payload.message) await mergeHandoffMessages([payload.message]);
+			lastHandoffMessageId = payload.latestMessageId ?? payload.message?.id ?? '';
+			scheduleHandoffPoll(1000);
+		} catch (error) {
+			handoffError =
+				error instanceof Error ? error.message : 'Bantuan petugas belum dapat diminta.';
+		} finally {
+			handoffBusy = false;
+		}
+	}
+
+	async function sendHandoffMessage() {
+		if (busy || handoffBusy || !handoffOpen || !chatSession) return;
+		const value = input.trim();
+		handoffError = '';
+		if (!value) {
+			handoffError = 'Tulis pesan untuk petugas.';
+			return;
+		}
+		handoffBusy = true;
+		try {
+			const response = await fetch('/api/chat/handoff/messages', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'x-csrf-token': chatSession.csrfToken
+				},
+				body: JSON.stringify({ body: value })
+			});
+			const payload = (await response.json().catch(() => ({}))) as {
+				error?: string;
+				code?: string;
+				handoff?: ReporterHandoff;
+				message?: HandoffThreadMessage | null;
+				latestMessageId?: string | null;
+			};
+			if (!response.ok) {
+				if (payload.code === 'handoff_not_open') {
+					handoff = null;
+					lastHandoffMessageId = '';
+					clearHandoffTimer();
+				}
+				throw new Error(payload.error || 'Pesan belum dapat dikirim.');
+			}
+			if (payload.handoff) handoff = payload.handoff;
+			if (payload.message) await mergeHandoffMessages([payload.message]);
+			lastHandoffMessageId = payload.latestMessageId ?? payload.message?.id ?? lastHandoffMessageId;
+			input = '';
+			await focusComposer();
+		} catch (error) {
+			handoffError = error instanceof Error ? error.message : 'Pesan belum dapat dikirim.';
+		} finally {
+			handoffBusy = false;
+			scheduleHandoffPoll();
+		}
+	}
+
+	async function cancelHandoff() {
+		if (handoffBusy || !handoffOpen || !chatSession) return;
+		handoffBusy = true;
+		handoffError = '';
+		try {
+			const response = await fetch('/api/chat/handoff/cancel', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'x-csrf-token': chatSession.csrfToken
+				},
+				body: '{}'
+			});
+			const payload = (await response.json().catch(() => ({}))) as {
+				error?: string;
+				handoff?: ReporterHandoff;
+				message?: HandoffThreadMessage | null;
+				latestMessageId?: string | null;
+			};
+			if (!response.ok || !payload.handoff) {
+				throw new Error(payload.error || 'Bantuan petugas belum dapat diakhiri.');
+			}
+			handoff = payload.handoff;
+			if (payload.message) await mergeHandoffMessages([payload.message]);
+			lastHandoffMessageId = payload.latestMessageId ?? payload.message?.id ?? lastHandoffMessageId;
+			clearHandoffTimer();
+		} catch (error) {
+			handoffError = error instanceof Error ? error.message : 'Bantuan petugas belum dapat diakhiri.';
+		} finally {
+			handoffBusy = false;
+		}
+	}
+
+	async function pollHandoff(force = false) {
+		if ((!handoffOpen && !force) || handoffPolling || !chatSession) return;
+		handoffPolling = true;
+		try {
+			const query = lastHandoffMessageId
+				? `?after=${encodeURIComponent(lastHandoffMessageId)}`
+				: '';
+			const response = await fetch(`/api/chat/handoff${query}`, {
+				headers: { Accept: 'application/json' }
+			});
+			if (response.status === 401) {
+				chatError = 'Sesi sudah berakhir. Muat ulang halaman untuk melanjutkan.';
+				return;
+			}
+			const payload = (await response.json().catch(() => ({}))) as {
+				error?: string;
+				handoff?: ReporterHandoff | null;
+				messages?: HandoffThreadMessage[];
+				latestMessageId?: string | null;
+			};
+			if (!response.ok) throw new Error(payload.error || 'Status bantuan belum dapat dimuat.');
+			handoffError = '';
+			if (payload.handoff) handoff = payload.handoff;
+			if (payload.messages?.length) await mergeHandoffMessages(payload.messages);
+			if (payload.latestMessageId) lastHandoffMessageId = payload.latestMessageId;
+		} catch {
+			// Polling berikutnya dicoba lagi; kesalahan sesi permanen ditangani di atas.
+		} finally {
+			handoffPolling = false;
+			if (handoffOpen) scheduleHandoffPoll();
+		}
+	}
+
+	function dismissHandoffNotice() {
+		handoff = null;
+		handoffError = '';
+		lastHandoffMessageId = '';
+		clearHandoffTimer();
 	}
 
 	/**
@@ -410,6 +663,10 @@
 		input = '';
 		addingStory = false;
 		chatError = '';
+		handoff = null;
+		handoffError = '';
+		lastHandoffMessageId = '';
+		clearHandoffTimer();
 		const intro =
 			serviceMode === 'unavailable'
 				? 'Halo. Petugas tidak tersedia, jadi kita susun draf bersama. Ceritakan yang ingin Anda sampaikan dengan kata-kata sendiri; saya akan menanyakan satu bagian pelengkap setiap giliran.'
@@ -552,6 +809,10 @@
 
 	async function handleComposerSubmit(event?: SubmitEvent) {
 		event?.preventDefault();
+		if (handoffOpen) {
+			await sendHandoffMessage();
+			return;
+		}
 		if (addingStory) {
 			await appendStory();
 			return;
@@ -575,6 +836,10 @@
 
 	async function openReview() {
 		if (busy) return;
+		if (handoffOpen) {
+			chatError = 'Selesaikan atau akhiri percakapan dengan petugas sebelum membuka draf.';
+			return;
+		}
 		if (!story.trim()) {
 			chatError = 'Tulis cerita inti sebelum membuka draf.';
 			await focusComposer();
@@ -607,6 +872,13 @@
 
 	async function submitReport() {
 		if (busy) return;
+		if (handoffOpen) {
+			submitError = 'Bantuan petugas masih terbuka. Selesaikan percakapan sebelum mengirim laporan.';
+			stage = 'chat';
+			await tick();
+			composer?.focus();
+			return;
+		}
 		submitError = '';
 		const name = victimName.trim();
 		if (name.length < 2) {
@@ -788,6 +1060,19 @@
 						<p>{modeDescription}</p>
 					</div>
 				</div>
+				<p class:closed={!handoffAvailable} class="mode-hours">
+					{#if handoffAvailable}
+						Bantuan petugas langsung tersedia. Jam layanan: {SERVICE_HOURS_LABEL}.
+					{:else}
+						Bantuan petugas langsung belum tersedia. Jam layanan: {SERVICE_HOURS_LABEL}.
+					{/if}
+				</p>
+				{#if dev && !handoffAvailable}
+					<p class="dev-mode-link">
+						Mode pengembangan:
+						<a href="?mode=operator">buka mode layanan petugas</a> untuk menguji bantuan langsung.
+					</p>
+				{/if}
 
 				<div class="privacy-strip">
 					<strong>Gunakan perangkat yang aman.</strong>
@@ -936,7 +1221,28 @@
 						<p>{modeLabel}</p>
 					</div>
 					<div class="chat-bar-actions">
-						{#if isFieldStep}
+						{#if !handoffOpen}
+							{#if handoffAvailable}
+								<button
+									class="bar-button handoff-trigger"
+									type="button"
+									onclick={requestHandoff}
+									disabled={handoffBusy || busy}
+								>
+									{handoffBusy ? 'Menghubungkan...' : 'Minta bantuan petugas'}
+								</button>
+							{:else}
+								<button
+									class="bar-button handoff-unavailable"
+									type="button"
+									disabled
+									title={`Bantuan petugas langsung tersedia ${SERVICE_HOURS_LABEL}.`}
+								>
+									Bantuan petugas
+								</button>
+							{/if}
+						{/if}
+						{#if isFieldStep && !handoffOpen}
 							<button
 								class="bar-button"
 								type="button"
@@ -959,6 +1265,53 @@
 					<p>{progressLabel}</p>
 				</div>
 
+				{#if !handoffOpen && !handoffAvailable}
+					<p class="handoff-hours">
+						<strong>Bantuan petugas langsung belum tersedia.</strong>
+						Jam layanan: {SERVICE_HOURS_LABEL}. Anda tetap dapat menyiapkan dan mengirim laporan.
+						{#if dev}
+							<a href="?mode=operator">Buka mode layanan petugas untuk pengujian.</a>
+						{/if}
+					</p>
+				{/if}
+
+				{#if handoff || handoffError}
+					<div
+						class:handoff-active={handoff?.status === 'active'}
+						class:handoff-closed={handoff && !handoffOpen}
+						class="handoff-banner"
+						role="status"
+					>
+						<div>
+							<strong>{handoff ? handoffStatusLabel(handoff.status) : 'Bantuan petugas'}</strong>
+							<p>
+								{handoff
+									? handoffStatusCopy(handoff.status)
+									: handoffError || 'Permintaan bantuan belum dapat diproses.'}
+							</p>
+							{#if handoff && handoffError}
+								<p class="handoff-error" role="alert">{handoffError}</p>
+							{/if}
+						</div>
+						<div class="handoff-banner-actions">
+							{#if handoffOpen}
+								<button
+									class="handoff-cancel"
+									type="button"
+									onclick={cancelHandoff}
+									disabled={handoffBusy}
+								>
+									{handoffBusy ? 'Memproses...' : handoff?.status === 'waiting' ? 'Batalkan' : 'Akhiri bantuan'}
+								</button>
+							{:else if handoff}
+								<button class="handoff-cancel" type="button" onclick={dismissHandoffNotice}>
+									Tutup
+								</button>
+							{/if}
+						</div>
+					</div>
+				{/if}
+
 				<div
 					class="message-log"
 					bind:this={chatLog}
@@ -968,7 +1321,12 @@
 					aria-label="Pesan percakapan"
 				>
 					{#each messages as message (message.id)}
-						<article class:from-user={message.sender === 'user'} class="message">
+						<article
+							class:from-user={message.sender === 'user'}
+							class:from-staff={message.sender === 'staff'}
+							class:from-service={message.sender === 'service'}
+							class="message"
+						>
 							<strong>
 								{messageLabel(message)}
 								{#if message.source === 'fallback' && serviceMode === 'ai' && aiEnabled}
@@ -982,23 +1340,28 @@
 
 				<div class="composer">
 					{#if chatStep === 'open'}
-						<div class="finish-bar">
+						<div class:finish-locked={handoffOpen} class="finish-bar">
 							<div class="finish-copy">
-								<strong>Sudah cukup?</strong>
+								<strong>{handoffOpen ? 'Bantuan petugas masih terbuka' : 'Sudah cukup?'}</strong>
 								<p>
-									Anda bisa terus menulis atau menyelesaikan percakapan untuk memeriksa draf.
+									{handoffOpen
+										? 'Selesaikan percakapan dengan petugas sebelum membuka draf.'
+										: 'Anda bisa terus menulis atau menyelesaikan percakapan untuk memeriksa draf.'}
 								</p>
 							</div>
 							<button
 								class="button-primary finish-button"
 								type="button"
 								bind:this={reviewButton}
-								onclick={openReview}>Selesai dan periksa draf</button
+								onclick={openReview}
+								disabled={handoffOpen}
 							>
+								{handoffOpen ? 'Menunggu bantuan petugas' : 'Selesai dan periksa draf'}
+							</button>
 						</div>
 					{/if}
 
-					{#if !addingStory && isFieldStep}
+					{#if !addingStory && isFieldStep && !handoffOpen}
 						<div class="quick-replies" aria-label="Pilihan cepat">
 							{#if chatStep === 'time'}
 								<button type="button" onclick={() => answerTime('Hari ini')}>Hari ini</button>
@@ -1047,18 +1410,24 @@
 								bind:this={composer}
 								bind:value={input}
 								onkeydown={handleComposerKeydown}
-								rows={addingStory || chatStep === 'story' || chatStep === 'open' ? 4 : 2}
-								maxlength={addingStory || chatStep === 'story' || chatStep === 'open' ? 2000 : 500}
+								rows={handoffOpen || addingStory || chatStep === 'story' || chatStep === 'open' ? 4 : 2}
+								maxlength={handoffOpen || addingStory || chatStep === 'story' || chatStep === 'open' ? 2000 : 500}
 								placeholder={composerPlaceholder}
 								aria-describedby="composer-help"
 							></textarea>
-							<button class="button-primary send-button" type="submit" disabled={busy}>
-								{busy ? 'Mengirim...' : 'Kirim'}
+							<button
+								class="button-primary send-button"
+								type="submit"
+								disabled={busy || handoffBusy}
+							>
+								{busy || handoffBusy ? 'Mengirim...' : 'Kirim'}
 							</button>
 						</div>
 						<div class="composer-meta">
 							<p id="composer-help">
-								{#if addingStory}
+								{#if handoffOpen}
+									Pesan ini dikirim ke petugas, bukan ke AI. Jangan tulis NIK atau kontak lengkap.
+								{:else if addingStory}
 									Tambahan cerita akan masuk ke keterangan Anda.
 								{:else if chatStep === 'open'}
 									Percakapan tetap terbuka sampai Anda menekan Selesai. Gunakan Tambah cerita
@@ -1068,7 +1437,7 @@
 									tanpa izin.
 								{/if}
 							</p>
-							{#if chatStep !== 'story'}
+							{#if chatStep !== 'story' && !handoffOpen}
 								<div class="composer-links">
 									<button class="link-button" type="button" onclick={toggleAddingStory}>
 										{addingStory ? 'Batal tambah cerita' : 'Tambah cerita'}
@@ -1375,6 +1744,25 @@
 	.mode-panel.mode-operator .mode-dot { background: var(--magenta); }
 	.mode-panel.mode-unavailable { border-left-color: #b58a1b; background: #f7f4e8; }
 	.mode-panel.mode-unavailable .mode-dot { background: #b58a1b; }
+	.mode-hours {
+		margin: 8px 0 0;
+		padding-left: 26px;
+		color: var(--teal-dark);
+		font-size: 0.8rem;
+		font-weight: 700;
+	}
+	.mode-hours.closed { color: #7a5a10; }
+	.dev-mode-link {
+		margin: 4px 0 0;
+		padding-left: 26px;
+		color: var(--muted);
+		font-size: 0.78rem;
+	}
+	.dev-mode-link a,
+	.handoff-hours a {
+		color: var(--teal-dark);
+		font-weight: 800;
+	}
 	.privacy-strip {
 		margin-top: 14px;
 		padding: 13px 16px;
@@ -1602,6 +1990,87 @@
 	}
 	.message.from-user strong { color: #a9dbd7; }
 	.message.from-user p { color: #fff; }
+	.message.from-staff {
+		border-color: #b51761;
+		border-left-width: 4px;
+		background: #fff5f9;
+	}
+	.message.from-staff strong { color: var(--magenta-dark); }
+	.message.from-service {
+		border-style: dashed;
+		background: #f7faf9;
+	}
+	.message.from-service strong { color: var(--muted); }
+	.handoff-trigger {
+		border: 1px solid var(--yellow);
+		border-radius: 999px;
+		padding: 0 12px;
+		background: var(--yellow);
+		color: var(--navy);
+		font-weight: 800;
+	}
+	.handoff-trigger:hover { background: #ffdc85; color: var(--navy); }
+	.handoff-trigger:disabled { opacity: 0.7; }
+	.handoff-unavailable {
+		color: #c6dfe4;
+		text-decoration: none;
+		cursor: not-allowed;
+	}
+	.handoff-unavailable:hover { color: #c6dfe4; }
+	.handoff-hours {
+		margin: 0;
+		padding: 9px 18px;
+		border-bottom: 1px solid #e7d8a6;
+		background: #fffdf3;
+		color: #5b470d;
+		font-size: 0.78rem;
+		text-wrap: pretty;
+	}
+	.handoff-hours strong { margin-right: 4px; }
+	.handoff-banner {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 14px;
+		padding: 12px 18px;
+		border-left: 5px solid var(--yellow);
+		border-bottom: 1px solid #e7d8a6;
+		background: var(--attention);
+		color: #493a0b;
+	}
+	.handoff-banner.handoff-active {
+		border-left-color: var(--teal);
+		border-bottom-color: #b8d8d2;
+		background: var(--surface-teal);
+		color: #214f4e;
+	}
+	.handoff-banner.handoff-closed {
+		border-left-color: #8da6ad;
+		border-bottom-color: var(--border);
+		background: var(--surface);
+		color: var(--ink);
+	}
+	.handoff-banner strong { display: block; font-size: 0.92rem; }
+	.handoff-banner p { margin: 3px 0 0; font-size: 0.82rem; text-wrap: pretty; }
+	.handoff-banner .handoff-error { color: var(--danger); font-weight: 700; }
+	.handoff-banner-actions { flex: 0 0 auto; }
+	.handoff-cancel {
+		min-height: 40px;
+		padding: 0 12px;
+		border: 1px solid currentColor;
+		border-radius: var(--radius-control);
+		background: transparent;
+		color: inherit;
+		font-size: 0.8rem;
+		font-weight: 800;
+	}
+	.handoff-cancel:hover { background: rgb(255 255 255 / 55%); }
+	.handoff-cancel:disabled { opacity: 0.6; }
+	.finish-locked {
+		border-left-color: #b8830b;
+		background: var(--attention);
+	}
+	.finish-locked p { color: #5b470d; }
 	.composer {
 		flex: 0 0 auto;
 		padding: 14px 18px 12px;
@@ -1874,6 +2343,9 @@
 		.chat-progress { padding: 8px 12px; gap: 8px; }
 		.progress-track { flex-basis: 90px; }
 		.chat-progress p { font-size: 0.72rem; }
+		.handoff-banner { flex-direction: column; gap: 8px; padding: 10px 12px; }
+		.handoff-banner-actions { width: 100%; }
+		.handoff-cancel { width: 100%; }
 		.message-log { padding: 14px 12px; gap: 10px; }
 		.message { max-width: 88%; }
 		.composer { padding: 10px 12px 8px; }

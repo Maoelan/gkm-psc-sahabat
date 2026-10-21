@@ -4,6 +4,7 @@ import { db } from './db';
 import { secureCookies } from './env';
 import { hashSecret, randomToken, verifyPassword } from './crypto';
 import { recordAudit } from './audit';
+import { releaseStaffHandoffs } from './handoffs';
 import { allowAttempt, resetAttempts } from './rate-limit';
 
 export const STAFF_COOKIE = 'lapor_aman_staff';
@@ -222,6 +223,11 @@ export async function destroyStaffSession(cookies: Cookies, requestId?: string |
 		);
 		const row = result.rows[0];
 		if (row) {
+			try {
+				await releaseStaffHandoffs(row.staff_id, requestId);
+			} catch {
+				// Logout tetap diselesaikan; handoff dapat ditutup admin bila rilis gagal.
+			}
 			await recordAudit({
 				actorType: 'staff',
 				actorId: row.staff_id,

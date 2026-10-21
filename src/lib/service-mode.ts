@@ -1,5 +1,8 @@
 export type ServiceMode = 'operator' | 'ai' | 'unavailable';
 
+export const SERVICE_HOURS_LABEL =
+	'Senin–Kamis 08.00–14.00, Jumat 08.00–11.00, Sabtu 08.00–12.30 WITA';
+
 export type ModeCopy = {
 	label: string;
 	assistantLabel: string;
@@ -12,7 +15,7 @@ export function modeCopy(mode: ServiceMode, aiEnabled: boolean): ModeCopy {
 			label: 'Layanan petugas',
 			assistantLabel: 'Panduan LAPOR AMAN',
 			description:
-				'Laporan akan masuk ke meja petugas. Percakapan awal dipandu aplikasi untuk melengkapi draf; petugas meninjau setelah laporan dikirim.'
+				'Laporan akan masuk ke meja petugas. Percakapan awal dipandu aplikasi untuk melengkapi draf; Anda dapat meminta bantuan petugas saat jam layanan, dan petugas meninjau setelah laporan dikirim.'
 		};
 	}
 	if (mode === 'unavailable') {
