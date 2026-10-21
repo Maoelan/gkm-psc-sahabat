@@ -36,7 +36,7 @@ const skipDirNames = new Set([
 ]);
 const textExtensions = new Set([
   '.cjs', '.css', '.example', '.html', '.js', '.json', '.jsx', '.map', '.mjs', '.md',
-  '.npmrc', '.svelte', '.sql', '.svg', '.toml', '.ts', '.tsx', '.txt', '.xml', '.yaml', '.yml'
+  '.npmrc', '.py', '.svelte', '.sql', '.svg', '.toml', '.ts', '.tsx', '.txt', '.xml', '.yaml', '.yml'
 ]);
 const secretEnvKeys = new Set([
   'DATABASE_URL',
@@ -46,6 +46,7 @@ const secretEnvKeys = new Set([
   'NVIDIA_API_KEY',
   'DEMO_STAFF_PETUGAS_PASSWORD',
   'DEMO_STAFF_BIDAN_PASSWORD',
+  'DEMO_STAFF_ADMIN_PASSWORD',
   'META_WHATSAPP_TOKEN',
   'META_PHONE_NUMBER_ID',
   'TWILIO_ACCOUNT_SID',
@@ -85,13 +86,6 @@ function relative(file) {
   return path.relative(root, file).replaceAll('\\', '/');
 }
 
-function redact(value, type) {
-  if (type === 'phone') return `${value.slice(0, 4)}…${value.slice(-2)}`;
-  if (type === '16_digit_number') return `***${value.slice(-4)}`;
-  if (type === 'db_url') return 'postgresql://***';
-  if (value.length <= 10) return '***';
-  return `${value.slice(0, 4)}…${value.slice(-2)} (len ${value.length})`;
-}
 
 function parseEnv() {
   const envPath = path.join(root, '.env');
@@ -149,7 +143,7 @@ for (const [key, value] of env) {
 
 for (const file of files) {
   const name = relative(file);
-  if (name === '.env' || name === '.env.example') continue;
+  if (name === '.env') continue;
   const content = fs.readFileSync(file, 'utf8');
   for (const { key, value } of envValues) {
     if (content.includes(value)) add({ type: 'env_value', key, file: name });
@@ -171,7 +165,7 @@ const patterns = [
 
 for (const file of files) {
   const name = relative(file);
-  if (name === '.env' || name === '.env.example') continue;
+  if (name === '.env') continue;
   const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
@@ -179,28 +173,83 @@ for (const file of files) {
       pattern.lastIndex = 0;
       const match = pattern.exec(line);
       if (!match) continue;
-      add({ type, file: name, line: index + 1, preview: redact(match[0], type) });
+      add({ type, file: name, line: index + 1 });
     }
 
     for (const match of line.matchAll(/\b\d{16}\b/g)) {
       if (allowedSamples.has(match[0])) continue;
-      add({ type: '16_digit_number', file: name, line: index + 1, preview: redact(match[0], '16_digit_number') });
+      add({ type: '16_digit_number', file: name, line: index + 1 });
     }
 
     for (const match of line.matchAll(/(?:\+62|62|0)8[1-9][0-9 -]{7,13}/g)) {
       const value = match[0].trim();
       if (allowedSamples.has(value)) continue;
-      add({ type: 'phone', file: name, line: index + 1, preview: redact(value, 'phone') });
+      add({ type: 'phone', file: name, line: index + 1 });
     }
 
     for (const match of line.matchAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g)) {
       if (allowedSamples.has(match[0])) continue;
-      add({ type: 'email', file: name, line: index + 1, preview: redact(match[0], 'email') });
+      add({ type: 'email', file: name, line: index + 1 });
     }
 
     for (const match of line.matchAll(/postgres(?:ql)?:\/\/[^\s:'"<>]+:[^\s@'"<>]+@[^\s'"<>]+/gi)) {
       if (placeholderPattern.test(match[0])) continue;
-      add({ type: 'db_url', file: name, line: index + 1, preview: redact(match[0], 'db_url') });
+      add({ type: 'db_url', file: name, line: index + 1 });
+    }
+  }
+}
+
+// Inspect the index/history blobs themselves, so a clean working copy cannot hide an older leak.
+const requestedScopes = new Set(process.argv.slice(2));
+if ((requestedScopes.has('--history') || requestedScopes.has('--staged')) && git(['rev-parse', '--is-inside-work-tree']) !== 'true') {
+  add({ type: 'git_scan_unavailable', file: '.git' });
+}
+let scannedClientFiles = 0;
+if (requestedScopes.has('--client')) {
+  const clientRoot = path.join(root, '.svelte-kit', 'output', 'client');
+  if (!fs.existsSync(clientRoot)) add({ type: 'client_build_missing', file: '.svelte-kit/output/client' });
+  for (const file of walk(clientRoot)) {
+    const name = relative(file);
+    const content = fs.readFileSync(file, 'utf8');
+    scannedClientFiles++;
+    for (const { key, value } of envValues) if (content.includes(value)) add({ type: 'client_env_value', key, file: name });
+    for (const [type, pattern] of patterns) {
+      pattern.lastIndex = 0;
+      if (pattern.test(content)) add({ type, file: name, scope: 'client' });
+    }
+  }
+}
+
+const blobs = new Map();
+if (requestedScopes.has('--staged')) {
+  for (const line of git(['ls-files', '--stage']).split(/\r?\n/)) {
+    const match = line.match(/^\d+ ([a-f0-9]{40}) \d\t(.+)$/);
+    if (match) blobs.set(match[1], { file: match[2], scope: 'index' });
+  }
+}
+if (requestedScopes.has('--history')) {
+  for (const line of git(['rev-list', '--objects', '--all']).split(/\r?\n/)) {
+    const match = line.match(/^([a-f0-9]{40}) (.+)$/);
+    if (match && !blobs.has(match[1])) blobs.set(match[1], { file: match[2], scope: 'history' });
+  }
+}
+let scannedBlobs = 0;
+for (const [sha, { file, scope }] of blobs) {
+  if (/(^|\/)\.env($|\.)/.test(file) && !file.endsWith('.env.example')) add({ type: 'sensitive_git_file', file, scope });
+  if (!textExtensions.has(path.extname(file).toLowerCase()) && !['.gitignore', '.npmrc'].includes(path.basename(file))) continue;
+  let content;
+  try { content = execFileSync('git', ['cat-file', 'blob', sha], { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }); }
+  catch { add({ type: 'unreadable_git_blob', file, scope }); continue; }
+  scannedBlobs++;
+  for (const { key, value } of envValues) if (content.includes(value)) add({ type: 'env_value', key, file, scope });
+  const lines = content.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index++) {
+    for (const [type, pattern] of patterns) {
+      pattern.lastIndex = 0;
+      if (pattern.test(lines[index])) add({ type, file, line: index + 1, scope });
+    }
+    for (const match of lines[index].matchAll(/postgres(?:ql)?:\/\/[^\s:'"<>]+:[^\s@'"<>]+@[^\s'"<>]+/gi)) {
+      if (!placeholderPattern.test(match[0])) add({ type: 'db_url', file, line: index + 1, scope });
     }
   }
 }
@@ -225,7 +274,7 @@ if (isGitRepo && fs.existsSync(envPath)) {
 
 const unique = new Map(findings.map((finding) => [JSON.stringify(finding), finding]));
 if (unique.size === 0) {
-  console.log(`SECRET_SCAN_OK: ${files.length} file diperiksa; tidak ada indikasi rahasia.`);
+  console.log(`SECRET_SCAN_OK: ${files.length} file dan ${scannedBlobs} blob Git, dan ${scannedClientFiles} file klien diperiksa; tidak ada indikasi rahasia.`);
 } else {
   for (const finding of unique.values()) console.error(JSON.stringify(finding));
   console.error(`SECRET_SCAN_FAILED: ${unique.size} temuan. Hapus nilai rahasia dan rotasi kredensial bila sudah terlanjur tersebar.`);

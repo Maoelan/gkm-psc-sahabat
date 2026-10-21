@@ -1,6 +1,6 @@
 import type { Cookies } from '@sveltejs/kit';
 import { randomUUID } from 'node:crypto';
-import { db } from './db';
+import { db, transaction } from './db';
 import { secureCookies } from './env';
 import { hashSecret, randomToken } from './crypto';
 import { getServiceModeAt } from './service-mode';
@@ -60,21 +60,17 @@ export async function requireSession(cookies: Cookies): Promise<ReporterSession 
 export async function endSession(cookies: Cookies) {
 	const secret = cookies.get(SESSION_COOKIE);
 	if (secret) {
-		const result = await db.query<{ id: string }>(
-			`UPDATE chat_sessions SET status = 'ended', ended_at = now()
-			 WHERE session_secret_hash = $1 AND status = 'active'
-			 RETURNING id`,
-			[hashSecret(secret)]
-		);
-		const sessionId = result.rows[0]?.id;
-		if (sessionId) {
-			await db.query(
-				`UPDATE chat_handoffs
-				 SET status = 'cancelled', closed_at = now(), close_reason = 'session_ended'
-				 WHERE session_id = $1 AND status IN ('waiting', 'active')`,
-				[sessionId]
+		await transaction(async (client) => {
+			const found = await client.query<{ id: string }>('SELECT id FROM chat_sessions WHERE session_secret_hash = $1', [hashSecret(secret)]);
+			const sessionId = found.rows[0]?.id;
+			if (!sessionId) return;
+			await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [sessionId]);
+			await client.query("UPDATE chat_sessions SET status = 'ended', ended_at = now() WHERE id = $1 AND status = 'active'", [sessionId]);
+			await client.query(
+				`UPDATE chat_handoffs SET status = 'cancelled', closed_at = now(), close_reason = 'session_ended'
+				 WHERE session_id = $1 AND status IN ('waiting', 'active')`, [sessionId]
 			);
-		}
+		});
 	}
 	cookies.delete(SESSION_COOKIE, { path: '/' });
 }
@@ -84,7 +80,4 @@ export function hasValidCsrf(request: Request, session: ReporterSession) {
 	return Boolean(token) && token === session.csrfToken;
 }
 
-export function requestOriginAllowed(request: Request) {
-	const origin = request.headers.get('origin');
-	return !origin || origin === new URL(request.url).origin;
-}
+export { requestOriginAllowed } from './request-security';

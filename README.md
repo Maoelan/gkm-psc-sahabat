@@ -65,7 +65,7 @@ npm run build
 npm run start
 ```
 
-`npm run start` menjalankan build adapter-node dan memuat `.env`. Untuk demo harian, gunakan `npm run dev`: akses HTTP langsung ke build adapter-node tidak menjamin form action karena adapter menganggap permintaan sebagai HTTPS kecuali berada di belakang reverse proxy dengan header protokol yang benar. Smoke test `npm start` pada proyek ini mencakup health dan halaman publik, bukan login langsung tanpa proxy.
+`npm run start` menjalankan build adapter-node dan memuat `.env`. Untuk demo harian, gunakan `npm run dev`. Pada adapter-node versi ini, `PUBLIC_BASE_URL` dibaca saat build untuk `kit.paths.origin`. Isi alamat layanan yang tepat sebelum build dan buka origin yang sama di browser. Sesuaikan juga `PORT` dengan port pada URL tersebut ketika menjalankan build lokal. Variabel runtime `ORIGIN` dari versi adapter lama tidak dipakai. Referrer hanya dikirim ke origin yang sama agar form login tetap membawa Origin, dan tidak dikirim ke situs eksternal.
 
 ## Akun staff lokal
 
@@ -99,7 +99,7 @@ Jangan commit `.env` atau mencetak nilainya di log. Nilai rahasia harus tetap se
 - Convex: Convex bukan pengganti langsung untuk SvelteKit + PostgreSQL yang dipakai saat ini. Aplikasi memakai `pg` dan route server SvelteKit; memindahkan backend ke Convex memerlukan rancangan fungsi/skema baru dan migrasi data, bukan sekadar deploy.
 - PostgreSQL terkelola: gunakan `DATABASE_SSL=true`, koneksi server-only, dan kredensial terpisah dari akun admin.
 - `REPORT_DATA_KEY` dan `NIK_DATA_KEY` harus tetap stabil. Menggantinya tanpa migrasi membuat data lama tidak dapat dibaca.
-- Untuk hosting HTTPS, set `PUBLIC_BASE_URL=https://...`; untuk adapter-node di belakang proxy, set `ORIGIN` ke origin publik yang sama.
+- Untuk hosting HTTPS, set `PUBLIC_BASE_URL=https://...`; untuk adapter-node di belakang proxy, isi `PUBLIC_BASE_URL` sebelum build agar `kit.paths.origin` memakai origin publik yang sama.
 - Aktifkan private vulnerability reporting dan secret scanning di GitHub. Workflow `.github/workflows/security.yml` menjalankan pemindaian rahasia dan `npm audit` pada setiap push/PR.
 
 ## Notifikasi WhatsApp
@@ -130,11 +130,17 @@ Untuk pengiriman nyata, isi kredensial Meta Cloud API atau Twilio dan nomor tuju
 ```sh
 npm run check
 npm test
+npm run test:integration
+npm run test:e2e
 npm run build
 npm run db:check
-npm run security:scan
-npm audit --audit-level=high
+npm run security:scan -- --history --staged --client
+npm audit --audit-level=low
 ```
+
+`test:integration` memakai skema PostgreSQL sementara yang dihapus setelah pengujian; data aplikasi tidak direset. `test:e2e` menyalakan server khusus port 5175 dan dua konteks browser dengan akun uji sementara. Siapkan Python dan Playwright Chromium (`python -m pip install playwright`, lalu `python -m playwright install chromium`) untuk menjalankannya. AI dan pengiriman WhatsApp dinonaktifkan pada server E2E. Untuk menguji build adapter-node, jalankan build lalu set E2E_PRODUCTION=true sebelum test:e2e; pengujian akan membangun aplikasi dengan origin uji port 5176 dan menjalankan adapter-node. Jalankan build biasa kembali bila ingin memakai origin lokal setelahnya.
+
+Ekstraksi field AI sekarang memakai kutipan keterangan yang divalidasi server. Pesan tambahan selama chat bebas dan bantuan petugas masuk ke draf yang dapat diperiksa. Batas pesan 2000 karakter, total cerita 20000 karakter, waktu 160, lokasi 200, dan kebutuhan 300; nilai tidak dipotong diam-diam.
 
 Dokumen internal (PRD, product, QA, desain, dan audit) tidak disertakan di repo publik.
 

@@ -365,22 +365,29 @@ export async function getRecapReports() {
 	return result.rows.map(mapRecap);
 }
 
+async function lockActiveReporter(client: PoolClient, sessionId: string) {
+	await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [sessionId]);
+	const active = await client.query("SELECT id FROM chat_sessions WHERE id = $1 AND status = 'active' AND expires_at > now() FOR UPDATE", [sessionId]);
+	if (!active.rowCount) throw new ReportServiceError(401, 'session_expired', 'Sesi sudah berakhir. Muat ulang halaman.');
+}
+
 export async function createDraft(sessionId: string, content: StoredDraft) {
-	const versionResult = await db.query<{ version: number }>(
-		`SELECT coalesce(max(version), 0) + 1 AS version
-		 FROM report_drafts WHERE session_id = $1`,
-		[sessionId]
-	);
-	const version = versionResult.rows[0]?.version ?? 1;
-	const draft = encrypted(content, 'draft_content');
-	const id = randomUUID();
-	await db.query(
-		`INSERT INTO report_drafts
-		 (id, session_id, version, content_enc, content_iv, content_tag, status, expires_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, 'ready_for_confirmation', now() + interval '30 days')`,
-		[id, sessionId, version, draft.enc, draft.iv, draft.tag]
-	);
-	return { draftId: id, version };
+	return transaction(async (client) => {
+		await lockActiveReporter(client, sessionId);
+		const versionResult = await client.query<{ version: number }>(
+			`SELECT coalesce(max(version), 0) + 1 AS version FROM report_drafts WHERE session_id = $1`, [sessionId]
+		);
+		const version = versionResult.rows[0]?.version ?? 1;
+		const draft = encrypted(content, 'draft_content');
+		const id = randomUUID();
+		await client.query(
+			`INSERT INTO report_drafts
+			 (id, session_id, version, content_enc, content_iv, content_tag, status, expires_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, 'ready_for_confirmation', now() + interval '30 days')`,
+			[id, sessionId, version, draft.enc, draft.iv, draft.tag]
+		);
+		return { draftId: id, version };
+	});
 }
 
 function makeReferenceCode() {
@@ -415,23 +422,22 @@ export async function submitReport(
 		);
 	}
 
-	const existing = await db.query<{ reference_code: string; submitted_at: Date; source_session_id: string }>(
-		'SELECT reference_code, submitted_at, source_session_id FROM reports WHERE idempotency_key = $1',
-		[input.idempotencyKey]
-	);
-	if (existing.rows[0]) {
-		if (existing.rows[0].source_session_id !== session.id) {
-			throw new ReportServiceError(409, 'idempotency_conflict', 'Kunci pengiriman sudah digunakan.');
-		}
-		return {
-			referenceCode: existing.rows[0].reference_code,
-			submittedAt: existing.rows[0].submitted_at.toISOString()
-		};
-	}
-
 	return transaction(async (client) => {
-		await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [session.id]);
-		await client.query('SELECT id FROM chat_sessions WHERE id = $1 FOR UPDATE', [session.id]);
+		await lockActiveReporter(client, session.id);
+		const existing = await client.query<{ reference_code: string; submitted_at: Date; source_session_id: string }>(
+			'SELECT reference_code, submitted_at, source_session_id FROM reports WHERE idempotency_key = $1',
+			[input.idempotencyKey]
+		);
+		if (existing.rows[0]) {
+			if (existing.rows[0].source_session_id !== session.id) {
+				throw new ReportServiceError(409, 'idempotency_conflict', 'Kunci pengiriman sudah digunakan.');
+			}
+			return {
+				referenceCode: existing.rows[0].reference_code,
+				submittedAt: existing.rows[0].submitted_at.toISOString()
+			};
+		}
+
 		const openHandoff = await client.query(
 			`SELECT 1 FROM chat_handoffs
 			 WHERE session_id = $1 AND status IN ('waiting', 'active')
@@ -454,7 +460,7 @@ export async function submitReport(
 		}>(
 			`SELECT id, content_enc, content_iv, content_tag, status
 			 FROM report_drafts
-			 WHERE id = $1 AND session_id = $2 AND version = $3
+			 WHERE id = $1 AND session_id = $2 AND version = $3 AND expires_at > now()
 			 FOR UPDATE`,
 			[input.draftId, session.id, input.version]
 		);
@@ -703,7 +709,8 @@ export async function recordDecision(
 	});
 }
 
-export async function getNikForBidan(staff: StaffSession, referenceCode: string, requestId?: string | null) {
+export async function getReportNik(staff: StaffSession, referenceCode: string, requestId?: string | null) {
+	if (!staff.roles.includes('admin')) throw new ReportServiceError(403, 'nik_forbidden', 'NIK hanya untuk akun admin.');
 	const result = await db.query<{
 		id: string;
 		nik_enc: Buffer | null;
@@ -777,6 +784,7 @@ export async function getNikDirectory(
 }
 
 export async function getRecapExportRows(staff: StaffSession, requestId?: string | null) {
+	if (!staff.roles.includes('admin')) throw new ReportServiceError(403, 'export_forbidden', 'Ekspor hanya untuk akun admin.');
 	const result = await db.query<RecapRow & { nik_enc: Buffer | null; nik_iv: Buffer | null; nik_tag: Buffer | null }>(
 		`${officerSelect.replace('rep.safe_contact_allowed,', 'rep.safe_contact_allowed, v.nik_last4, v.nik_enc, v.nik_iv, v.nik_tag,')}
 		 ORDER BY r.submitted_at DESC`

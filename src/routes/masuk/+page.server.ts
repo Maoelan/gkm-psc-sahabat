@@ -20,7 +20,7 @@ function canAccessNext(roles: StaffRole[], next: string) {
 	if (next === '/petugas' || next === '/petugas/percakapan') {
 		return roles.includes('petugas') || roles.includes('admin');
 	}
-	if (next === '/rekap') return roles.includes('bidan_pic') || roles.includes('admin');
+	if (next === '/rekap') return roles.includes('admin');
 	if (next === '/admin/nik') return roles.includes('admin');
 	return false;
 }

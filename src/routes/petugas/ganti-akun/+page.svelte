@@ -11,11 +11,11 @@
 <div class="switch-page">
 	<section class="switch-card" aria-labelledby="switch-title">
 		<p class="step-kicker">Akses rekap</p>
-		<h1 id="switch-title">Beralih ke akun bidan/PIC</h1>
+		<h1 id="switch-title">Beralih ke akun admin</h1>
 		<p class="switch-lead">
 			Anda masuk sebagai <strong>{data.staff.displayName}</strong>. Halaman rekap memuat NIK dan
-			hanya dapat dibuka akun bidan/PIC. Sesi petugas akan diakhiri sebelum Anda masuk dengan akun
-			bidan/PIC.
+			hanya dapat dibuka akun dengan peran admin. Sesi petugas akan diakhiri sebelum Anda masuk dengan akun
+			admin.
 		</p>
 
 		<div class="switch-notice">
@@ -32,12 +32,12 @@
 
 		<form method="POST" action="?/switchAccount" class="switch-actions">
 			<input type="hidden" name="csrfToken" value={data.csrfToken} />
-			<button class="button-primary" type="submit">Keluar dan masuk sebagai bidan/PIC</button>
+			<button class="button-primary" type="submit">Keluar dan masuk sebagai admin</button>
 			<a class="button-secondary" href="/petugas">Kembali ke meja petugas</a>
 		</form>
 
 		<p class="switch-footnote">
-			Gunakan akun bidan/PIC yang diberikan admin layanan. Jangan membagikan kata sandi atau
+			Gunakan akun berwenang yang diberikan pengelola layanan. Jangan membagikan kata sandi atau
 			membiarkan perangkat tanpa pengawasan.
 		</p>
 	</section>

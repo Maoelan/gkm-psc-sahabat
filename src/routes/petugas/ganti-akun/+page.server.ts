@@ -9,7 +9,7 @@ import {
 export async function load({ cookies }) {
 	const staff = await getStaffSession(cookies);
 	if (!staff) redirect(303, '/masuk?next=/rekap');
-	if (hasStaffRole(staff, ['bidan_pic', 'admin'])) redirect(303, '/rekap');
+	if (hasStaffRole(staff, ['admin'])) redirect(303, '/rekap');
 
 	return {
 		csrfToken: staff.csrfToken,

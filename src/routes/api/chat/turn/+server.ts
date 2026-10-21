@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { randomUUID } from 'node:crypto';
 import {
+	directAnswerFields,
 	fallbackChatTurn,
 	makeChatTurn,
 	remainingChatFields,
@@ -31,15 +32,7 @@ export async function POST({ cookies, request, locals }) {
 	if (!allowAttempt(`chat-turn:${session.id}`, 30, 10 * 60 * 1000)) {
 		return json({ error: 'Terlalu banyak permintaan. Coba lagi beberapa menit lagi.' }, { status: 429 });
 	}
-	if (await hasOpenHandoff(session.id)) {
-		return json(
-			{
-				error: 'Bantuan petugas sedang aktif. AI dijeda sampai percakapan dengan petugas selesai.',
-				code: 'handoff_open'
-			},
-			{ status: 409 }
-		);
-	}
+	const handoffAlreadyOpen = await hasOpenHandoff(session.id);
 
 	let body: unknown;
 	try {
@@ -58,23 +51,26 @@ export async function POST({ cookies, request, locals }) {
 		incidentLocation: parsed.data.incidentLocation,
 		need: parsed.data.need
 	};
-	const remainingFields = remainingChatFields(fields);
 	const history = session.mode === 'ai' ? await recentChatHistory(session.id) : [];
 	const result =
-		session.mode === 'ai'
+		session.mode === 'ai' && !handoffAlreadyOpen
 			? await makeChatTurn({
 					fields,
-					remainingFields,
 					story: parsed.data.story,
 					lastAnswer: userMessage,
-					history
+					history,
+					answerField: parsed.data.answerField
 				})
-			: fallbackChatTurn(remainingFields);
+			: (() => {
+				const answered = directAnswerFields(fields, userMessage, parsed.data.answerField);
+				return { ...fallbackChatTurn(remainingChatFields(answered)), fields: answered };
+			})();
 
 	const assistantSource = result.source === 'nvidia' ? 'ai' : 'fallback';
 	const assistantSender = result.source === 'nvidia' ? 'assistant' : 'service';
 	const assistantEncrypted = encrypt(result.message, 'chat_message');
 	const userEncrypted = userMessage ? encrypt(userMessage, 'chat_message') : null;
+	const userMessageId = randomUUID();
 
 	/**
 	 * Pemeriksaan kedua setelah panggilan AI: handoff bisa dibuka saat model masih
@@ -82,7 +78,8 @@ export async function POST({ cookies, request, locals }) {
 	 */
 	const saved = await transaction(async (client) => {
 		await acquireChatLock(client, session.id);
-		await client.query('SELECT id FROM chat_sessions WHERE id = $1 FOR UPDATE', [session.id]);
+		const active = await client.query("SELECT id FROM chat_sessions WHERE id = $1 AND status = 'active' AND expires_at > now() FOR UPDATE", [session.id]);
+		if (!active.rowCount) return { expired: true as const, blocked: false as const };
 		const open = await client.query<{ id: string }>(
 			`SELECT id FROM chat_handoffs
 			 WHERE session_id = $1 AND status IN ('waiting', 'active')
@@ -97,7 +94,7 @@ export async function POST({ cookies, request, locals }) {
 					 (id, session_id, sender_type, source, body_enc, body_iv, body_tag, handoff_id, created_at)
 					 VALUES ($1, $2, 'user', 'user', $3, $4, $5, $6, now())`,
 					[
-						randomUUID(),
+						userMessageId,
 						session.id,
 						userEncrypted.encrypted,
 						userEncrypted.iv,
@@ -117,7 +114,7 @@ export async function POST({ cookies, request, locals }) {
 				 ($1, $2, 'user', 'user', $3, $4, $5, now()),
 				 ($6, $2, $7, $8, $9, $10, $11, now() + interval '1 millisecond')`,
 				[
-					randomUUID(),
+					userMessageId,
 					session.id,
 					userEncrypted.encrypted,
 					userEncrypted.iv,
@@ -149,6 +146,7 @@ export async function POST({ cookies, request, locals }) {
 		return { blocked: false as const };
 	});
 
+	if ('expired' in saved) return json({ error: 'Sesi sudah berakhir. Muat ulang halaman.' }, { status: 401 });
 	if (saved.blocked) {
 		await recordAudit({
 			actorType: 'anonymous',
@@ -161,7 +159,9 @@ export async function POST({ cookies, request, locals }) {
 		return json(
 			{
 				error: 'Bantuan petugas baru saja aktif. AI dijeda; pesan Anda diteruskan ke petugas.',
-				code: 'handoff_open'
+				code: 'handoff_open',
+				accepted: Boolean(userEncrypted),
+				userMessageId
 			},
 			{ status: 409 }
 		);
@@ -181,10 +181,12 @@ export async function POST({ cookies, request, locals }) {
 		}
 	});
 	return json({
+		userMessageId,
 		flowComplete: result.flowComplete,
 		message: result.message,
 		question: result.question,
 		source: result.source,
-		missingField: result.missingField
+		missingField: result.missingField,
+		fields: result.fields ?? fields
 	});
 }

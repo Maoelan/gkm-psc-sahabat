@@ -1,3 +1,4 @@
+import { STORY_LIMIT, MESSAGE_LIMIT } from '../chat';
 import { z } from 'zod';
 import { PRIVACY_NOTICE_VERSION } from '../privacy';
 
@@ -24,7 +25,7 @@ export const draftSchema = z.object({
 		.string()
 		.trim()
 		.min(10, 'Tulis sedikitnya 10 karakter agar draf bisa disusun.')
-		.max(2000, 'Cerita terlalu panjang.'),
+		.max(STORY_LIMIT, 'Cerita terlalu panjang.'),
 	incidentTime: text(160).default('Belum diketahui'),
 	incidentLocation: text(200).default('Belum diketahui'),
 	need: text(300).default('Belum diketahui'),
@@ -43,11 +44,12 @@ export const submitSchema = z.object({
 });
 
 export const chatTurnSchema = z.object({
-	story: z.string().trim().min(10, 'Cerita terlalu pendek.').max(2000, 'Cerita terlalu panjang.'),
+	story: z.string().trim().min(10, 'Cerita terlalu pendek.').max(STORY_LIMIT, 'Cerita terlalu panjang.'),
 	incidentTime: z.string().trim().max(160).default(''),
 	incidentLocation: z.string().trim().max(200).default(''),
 	need: z.string().trim().max(300).default(''),
-	userMessage: z.string().trim().max(2000).optional()
+	userMessage: z.string().trim().max(MESSAGE_LIMIT).optional(),
+	answerField: z.enum(['incidentTime', 'incidentLocation', 'need']).optional()
 });
 
 export const handoffMessageSchema = z.object({

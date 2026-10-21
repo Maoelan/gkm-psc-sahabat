@@ -19,3 +19,9 @@ describe('maskSensitiveText', () => {
 		expect(maskSensitiveText(text)).toBe(text);
 	});
 });
+
+describe('NIK dengan pemisah', () => {
+	it.each(['0000 0000 0000 0001', '0000-0000-0000-0001', '0000.0000.0000.0001', '0000000000000001'])('menyamarkan %s', (nik) => {
+		expect(maskSensitiveText(`NIK ${nik}.`)).not.toContain(nik);
+	});
+});

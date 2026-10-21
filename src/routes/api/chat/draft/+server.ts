@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { recordAudit } from '../../../../lib/server/audit';
-import { createDraft } from '../../../../lib/server/reports';
+import { createDraft, ReportServiceError } from '../../../../lib/server/reports';
 import {
 	hasValidCsrf,
 	requestOriginAllowed,
@@ -40,7 +40,8 @@ export async function POST({ cookies, request, locals }) {
 			metadata: { version: draft.version }
 		});
 		return json(draft, { status: 201 });
-	} catch {
+	} catch (error) {
+		if (error instanceof ReportServiceError) return json({ error: error.message, code: error.code }, { status: error.status });
 		return json({ error: 'Draf belum dapat disimpan. Coba lagi.' }, { status: 503 });
 	}
 }

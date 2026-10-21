@@ -51,6 +51,7 @@
 		pageMounted = true;
 		timer = setTimeout(poll, 3000);
 		return () => {
+			pageMounted = false;
 			if (timer) clearTimeout(timer);
 		};
 	});

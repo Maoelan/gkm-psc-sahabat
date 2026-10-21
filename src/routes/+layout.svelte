@@ -13,12 +13,12 @@
 		{ href: '/chat', label: 'Chat Pengaduan' }
 	];
 	const staffHome = $derived(
-		data.staff?.roles.includes('bidan_pic') || data.staff?.roles.includes('admin')
+		data.staff?.roles.includes('admin')
 			? '/rekap'
 			: '/petugas'
 	);
 	const recapHref = $derived(
-		data.staff?.roles.includes('bidan_pic') || data.staff?.roles.includes('admin')
+		data.staff?.roles.includes('admin')
 			? '/rekap'
 			: data.staff
 				? '/petugas/ganti-akun'
@@ -36,7 +36,7 @@
 	}
 
 	function quickExit() {
-		sessionStorage.clear();
+		try { sessionStorage.clear(); } catch { /* Browser storage may be disabled. */ }
 		void fetch('/api/chat/session', { method: 'DELETE', keepalive: true }).catch(() => {});
 		if (data.staff?.csrfToken) {
 			void fetch('/api/staff/logout', {

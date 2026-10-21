@@ -1,3 +1,4 @@
+import { requestOriginAllowed } from './request-security';
 import { json } from '@sveltejs/kit';
 import type { Cookies } from '@sveltejs/kit';
 import {
@@ -25,7 +26,7 @@ export async function requireStaffApi(
 }
 
 export function requireCsrf(request: Request, staff: StaffSession) {
-	if (!hasStaffCsrf(request, staff)) {
+	if (!requestOriginAllowed(request) || !hasStaffCsrf(request, staff)) {
 		return apiError(403, 'csrf_invalid', 'Token keamanan sesi tidak cocok. Muat ulang halaman.');
 	}
 	return null;

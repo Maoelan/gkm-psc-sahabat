@@ -3,7 +3,7 @@ import { getOutboxSummary } from '../../../../lib/server/reports';
 import { requireStaffApi } from '../../../../lib/server/staff-api';
 
 export async function GET({ cookies }) {
-	const staff = await requireStaffApi(cookies, ['petugas', 'bidan_pic', 'admin']);
+	const staff = await requireStaffApi(cookies, ['admin']);
 	if (staff instanceof Response) return staff;
 	try {
 		return json(await getOutboxSummary());

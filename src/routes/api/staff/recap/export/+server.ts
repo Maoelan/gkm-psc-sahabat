@@ -3,7 +3,7 @@ import { getRecapExportRows } from '../../../../../lib/server/reports';
 import { requireStaffApi } from '../../../../../lib/server/staff-api';
 
 export async function GET({ cookies, locals }) {
-	const staff = await requireStaffApi(cookies, ['bidan_pic', 'admin']);
+	const staff = await requireStaffApi(cookies, ['admin']);
 	if (staff instanceof Response) return staff;
 	try {
 		const rows = await getRecapExportRows(staff, locals.requestId);

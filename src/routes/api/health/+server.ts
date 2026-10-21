@@ -5,6 +5,7 @@ import { db } from '../../../lib/server/db';
 export async function GET() {
 	try {
 		await db.query('SELECT 1');
+		if (env.NODE_ENV === 'production') return json({ status: 'ok' });
 		return json({
 			status: 'ok',
 			database: 'connected',
@@ -17,6 +18,7 @@ export async function GET() {
 			notificationProvider: env.WHATSAPP_PROVIDER || 'outbox'
 		});
 	} catch {
+		if (env.NODE_ENV === 'production') return json({ status: 'degraded' }, { status: 503 });
 		return json(
 			{
 				status: 'degraded',

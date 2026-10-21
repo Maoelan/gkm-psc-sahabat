@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { page } from '$app/state';
 	import { dev } from '$app/env';
 	import { onMount, tick } from 'svelte';
 	import { modeCopy, SERVICE_HOURS_LABEL, type ServiceMode } from '../../lib/service-mode';
+	import { appendReportStory, STORY_LIMIT, MESSAGE_LIMIT, type AnswerField, type ChatFields } from '../../lib/chat';
 	import { isValidNik, maskNik, normalizeNik } from '../../lib/reports';
 	import {
 		handoffStatusCopy,
@@ -31,7 +31,6 @@
 
 	let { data }: PageProps = $props();
 
-	const forcedSubmitState = page.url.searchParams.get('state');
 	// Nilai awal dari server; perubahan mode hanya terjadi lewat aksi pengguna di halaman ini.
 	// svelte-ignore state_referenced_locally
 	let serviceMode = $state<ServiceMode>(data.serviceMode);
@@ -42,11 +41,10 @@
 	const assistantLabel = $derived(modeInfo.assistantLabel);
 	const modeDescription = $derived(modeInfo.description);
 	let chatSession = $state<ChatSession | null>(null);
-	let draftId = $state('');
-	let draftVersion = $state(0);
 	let idempotencyKey = $state('');
 	let handoff = $state<ReporterHandoff | null>(null);
 	let handoffError = $state('');
+	let dismissedHandoffId = $state('');
 	let handoffBusy = $state(false);
 	let lastHandoffMessageId = $state('');
 	let handoffPolling = $state(false);
@@ -152,16 +150,22 @@
 			clearHandoffTimer();
 			return;
 		}
-		if (handoffOpen) scheduleHandoffPoll(800);
+		scheduleHandoffPoll(800);
 	}
 
 	onMount(() => {
 		pageMounted = true;
 		document.addEventListener('visibilitychange', handleHandoffVisibility);
 		return () => {
+			pageMounted = false;
 			document.removeEventListener('visibilitychange', handleHandoffVisibility);
 			if (handoffTimer) clearTimeout(handoffTimer);
 		};
+	});
+
+	$effect(() => {
+		if (pageMounted && chatSession && (stage === 'chat' || stage === 'review')) scheduleHandoffPoll(800);
+		else clearHandoffTimer();
 	});
 
 	function prefersReducedMotion() {
@@ -195,6 +199,9 @@
 		let added = false;
 		for (const item of items) {
 			if (messages.some((message) => message.serverId === item.id)) continue;
+			if (item.sender === 'user') {
+				try { story = appendReportStory(story, item.body); } catch (error) { chatError = String(error); }
+			}
 			messages.push({
 				id: nextMessageId++,
 				serverId: item.id,
@@ -217,28 +224,6 @@
 	async function focusComposer() {
 		await tick();
 		composer?.focus();
-	}
-
-	function storyMentionsTime(value: string) {
-		return /\b(kemarin|tadi|hari ini|minggu ini|minggu lalu|bulan ini|bulan lalu|tahun ini|tahun lalu|pukul|jam|tanggal|senin|selasa|rabu|kamis|jumat|sabtu|minggu|subuh|pagi|siang|sore|malam)\b|\b\d{1,2}[.:]\d{2}\b|\b\d{1,2}\s+(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)\b/i.test(
-			value
-		);
-	}
-
-	function storyMentionsLocation(value: string) {
-		return /\b(rumah|sekolah|kantor|pasar|jalan|desa|dusun|banjar|lingkungan|puskesmas|kecamatan|kabupaten|kos|asrama|tempat kerja|tempat umum)\b/i.test(
-			value
-		);
-	}
-
-	function storyMentionsNeed(value: string) {
-		return /\b(bantuan|dukungan|pendampingan|dampingi|klarifikasi|tindak lanjut|konseling|informasi|berharap)\b|\b(?:butuh|membutuhkan)\s+(?:bantuan|dukungan|pendampingan|informasi|klarifikasi|konseling|keadilan|tindak lanjut)\b/i.test(
-			value
-		);
-	}
-
-	function fieldIsUnset(value: string) {
-		return !value.trim() || value === 'Belum diketahui';
 	}
 
 	async function ensureSession() {
@@ -301,8 +286,6 @@
 		if (!response.ok || !payload.draftId || !payload.version) {
 			throw new Error(payload.error || 'Draf belum dapat disimpan.');
 		}
-		draftId = payload.draftId;
-		draftVersion = payload.version;
 		return payload;
 	}
 
@@ -329,7 +312,7 @@
 		return 'fallback';
 	}
 
-	async function requestTurn(userMessage: string) {
+	async function requestTurn(userMessage: string, nextStory: string, answerField?: AnswerField) {
 		if (!chatSession) {
 			chatError = 'Sesi tidak tersedia. Muat ulang halaman lalu coba lagi.';
 			return;
@@ -343,27 +326,45 @@
 					'x-csrf-token': chatSession.csrfToken
 				},
 				body: JSON.stringify({
-					story: story.trim(),
+					story: nextStory.trim(),
 					incidentTime: incidentTime.trim(),
 					incidentLocation: incidentLocation.trim(),
 					need: need.trim(),
-					userMessage
+					userMessage,
+					answerField
 				})
 			});
 			const payload = (await response.json().catch(() => ({}))) as {
 				error?: string;
 				code?: string;
+				accepted?: boolean;
+				userMessageId?: string;
 				flowComplete?: boolean;
 				message?: string | null;
 				question?: string | null;
 				source?: string;
 				missingField?: MissingField | null;
+				fields?: ChatFields;
 			};
 			if (!response.ok) {
 				if (payload.code === 'handoff_open') {
+					if (payload.accepted) {
+						story = nextStory;
+						input = '';
+						await addMessage('user', userMessage, 'user', payload.userMessageId);
+					}
 					await pollHandoff(true);
+					if (payload.accepted) return;
 				}
 				throw new Error(payload.error || 'Pertanyaan berikutnya belum dapat dimuat.');
+			}
+			story = nextStory;
+			input = '';
+			await addMessage('user', userMessage, 'user', payload.userMessageId);
+			if (payload.fields) {
+				incidentTime = payload.fields.incidentTime;
+				incidentLocation = payload.fields.incidentLocation;
+				need = payload.fields.need;
 			}
 			const source = sourceForPayload(payload.source);
 			if (payload.flowComplete) {
@@ -388,19 +389,23 @@
 		}
 	}
 
-	async function sendFreeMessage() {
+	async function sendChatMessage(value: string, answerField?: AnswerField, initial = false) {
 		if (busy) return;
-		const value = input.trim();
-		chatError = '';
-		if (!value) {
-			chatError = 'Tulis tanggapan atau tambahan cerita.';
+		const message = value.trim();
+		if (!message || message.length > MESSAGE_LIMIT) {
+			chatError = `Tulis pesan antara 1 dan ${MESSAGE_LIMIT} karakter.`;
+			return;
+		}
+		if (initial && message.length < 10) {
+			chatError = 'Tulis sedikitnya 10 karakter agar draf bisa disusun.';
 			return;
 		}
 		busy = true;
 		try {
-			await addMessage('user', value);
-			input = '';
-			await requestTurn(value);
+			const nextStory = initial ? message : appendReportStory(story, message);
+			await requestTurn(message, nextStory, answerField);
+		} catch (error) {
+			chatError = error instanceof Error ? error.message : 'Pesan belum terkirim.';
 		} finally {
 			busy = false;
 		}
@@ -415,7 +420,7 @@
 
 	function scheduleHandoffPoll(delay = 3500) {
 		clearHandoffTimer();
-		if (!pageMounted || !handoffOpen) return;
+		if (!pageMounted || !chatSession || document.hidden || (stage !== 'chat' && stage !== 'review')) return;
 		handoffTimer = setTimeout(() => {
 			void pollHandoff();
 		}, delay);
@@ -465,6 +470,8 @@
 			handoffError = 'Tulis pesan untuk petugas.';
 			return;
 		}
+		if (value.length > MESSAGE_LIMIT) { handoffError = `Pesan maksimal ${MESSAGE_LIMIT} karakter.`; return; }
+		try { appendReportStory(story, value); } catch (error) { handoffError = String(error); return; }
 		handoffBusy = true;
 		try {
 			const response = await fetch('/api/chat/handoff/messages', {
@@ -533,11 +540,12 @@
 			handoffError = error instanceof Error ? error.message : 'Bantuan petugas belum dapat diakhiri.';
 		} finally {
 			handoffBusy = false;
+			scheduleHandoffPoll();
 		}
 	}
 
 	async function pollHandoff(force = false) {
-		if ((!handoffOpen && !force) || handoffPolling || !chatSession) return;
+		if ((!force && document.hidden) || handoffPolling || !chatSession) return;
 		handoffPolling = true;
 		try {
 			const query = lastHandoffMessageId
@@ -548,6 +556,8 @@
 			});
 			if (response.status === 401) {
 				chatError = 'Sesi sudah berakhir. Muat ulang halaman untuk melanjutkan.';
+				clearHandoffTimer();
+				chatSession = null;
 				return;
 			}
 			const payload = (await response.json().catch(() => ({}))) as {
@@ -558,51 +568,27 @@
 			};
 			if (!response.ok) throw new Error(payload.error || 'Status bantuan belum dapat dimuat.');
 			handoffError = '';
-			if (payload.handoff) handoff = payload.handoff;
+			if (payload.handoff && (payload.handoff.id !== dismissedHandoffId || isHandoffOpen(payload.handoff.status))) {
+				if (payload.handoff.id !== handoff?.id) lastHandoffMessageId = '';
+				handoff = payload.handoff;
+				if (isHandoffOpen(handoff.status) && stage === 'review') stage = 'chat';
+			}
 			if (payload.messages?.length) await mergeHandoffMessages(payload.messages);
 			if (payload.latestMessageId) lastHandoffMessageId = payload.latestMessageId;
 		} catch {
 			// Polling berikutnya dicoba lagi; kesalahan sesi permanen ditangani di atas.
 		} finally {
 			handoffPolling = false;
-			if (handoffOpen) scheduleHandoffPoll();
+			scheduleHandoffPoll();
 		}
 	}
 
 	function dismissHandoffNotice() {
+		dismissedHandoffId = handoff?.id ?? '';
 		handoff = null;
 		handoffError = '';
 		lastHandoffMessageId = '';
-		clearHandoffTimer();
-	}
-
-	/**
-	 * Pesan yang berupa pertanyaan atau kekhawatiran tidak dipakai sebagai jawaban field.
-	 * Tanpa pemisahan ini, pertanyaan seperti "siapa yang bisa melihat?" akan tersimpan
-	 * sebagai waktu atau lokasi kejadian.
-	 */
-	function isLikelySideMessage(value: string) {
-		const text = value.trim();
-		if (!text) return false;
-		if (text.includes('?')) return true;
-		if (
-			/^(?:apa|apakah|siapa|bagaimana|gimana|kenapa|mengapa|bisa|boleh|kalau|adakah|berapa|kapan|di mana|ke mana|dari mana)\b/i.test(
-				text
-			)
-		) {
-			return true;
-		}
-		const hasProjectTerm =
-			/\b(?:laporan|lapor|petugas|admin|nik|whatsapp|privasi|percakapan|riwayat|draf|aplikasi|sistem)\b/i.test(
-				text
-			);
-		const hasMetaQuestion =
-			/\b(?:siapa|apa|apakah|bagaimana|gimana|lihat|melihat|buka|dibuka|akses|kirim|dikirim|simpan|disimpan|tahu|rahasia|aman|data|ingin|mau)\b/i.test(
-				text
-			);
-		if (hasProjectTerm && hasMetaQuestion) return true;
-		if (/^(?:saya\s+)?(?:takut|cemas|khawatir|tidak aman)\b/i.test(text)) return true;
-		return /\b(?:pendapat|saran|nasihat|menurut)\w*\b/i.test(text);
+		scheduleHandoffPoll();
 	}
 
 	function formatWita(value: string) {
@@ -681,118 +667,11 @@
 		await focusComposer();
 	}
 
-	async function submitStory() {
-		if (busy) return;
-		const value = input.trim();
-		chatError = '';
-		if (value.length < 10) {
-			chatError = 'Tulis sedikitnya 10 karakter agar draf bisa disusun.';
-			return;
-		}
-		busy = true;
-		try {
-			story = value;
-			incidentTime = storyMentionsTime(value) ? 'Tercantum dalam cerita' : '';
-			incidentLocation = storyMentionsLocation(value) ? 'Tercantum dalam cerita' : '';
-			need = storyMentionsNeed(value) ? 'Tercantum dalam cerita' : '';
-			addingStory = false;
-			await addMessage('user', value);
-			input = '';
-			await requestTurn(value);
-		} finally {
-			busy = false;
-		}
-	}
-
-	async function appendStory() {
-		if (busy) return;
-		const value = input.trim();
-		chatError = '';
-		if (value.length < 3) {
-			chatError = 'Tulis tambahan cerita sedikitnya 3 karakter.';
-			return;
-		}
-		busy = true;
-		try {
-			story = `${story.trim()}\n\n${value}`.trim();
-			if (fieldIsUnset(incidentTime) && storyMentionsTime(value)) {
-				incidentTime = 'Tercantum dalam cerita';
-			}
-			if (fieldIsUnset(incidentLocation) && storyMentionsLocation(value)) {
-				incidentLocation = 'Tercantum dalam cerita';
-			}
-			if (fieldIsUnset(need) && storyMentionsNeed(value)) {
-				need = 'Tercantum dalam cerita';
-			}
-			addingStory = false;
-			await addMessage('user', value);
-			input = '';
-			await requestTurn(value);
-		} finally {
-			busy = false;
-		}
-	}
-
-	async function answerTime(value: string) {
-		if (busy) return;
-		busy = true;
-		try {
-			chatError = '';
-			incidentTime = value.trim() || 'Belum diketahui';
-			if (fieldIsUnset(incidentLocation) && storyMentionsLocation(value)) {
-				incidentLocation = 'Tercantum dalam cerita';
-			}
-			if (fieldIsUnset(need) && storyMentionsNeed(value)) {
-				need = 'Tercantum dalam cerita';
-			}
-			await addMessage('user', incidentTime);
-			input = '';
-			await requestTurn(incidentTime);
-		} finally {
-			busy = false;
-		}
-	}
-
-	async function answerLocation(value: string) {
-		if (busy) return;
-		busy = true;
-		try {
-			chatError = '';
-			incidentLocation = value.trim() || 'Belum diketahui';
-			if (fieldIsUnset(incidentTime) && storyMentionsTime(value)) {
-				incidentTime = 'Tercantum dalam cerita';
-			}
-			if (fieldIsUnset(need) && storyMentionsNeed(value)) {
-				need = 'Tercantum dalam cerita';
-			}
-			await addMessage('user', incidentLocation);
-			input = '';
-			await requestTurn(incidentLocation);
-		} finally {
-			busy = false;
-		}
-	}
-
-	async function answerNeed(value: string) {
-		if (busy) return;
-		busy = true;
-		try {
-			chatError = '';
-			need = value.trim() || 'Belum diketahui';
-			if (fieldIsUnset(incidentTime) && storyMentionsTime(value)) {
-				incidentTime = 'Tercantum dalam cerita';
-			}
-			if (fieldIsUnset(incidentLocation) && storyMentionsLocation(value)) {
-				incidentLocation = 'Tercantum dalam cerita';
-			}
-			addingStory = false;
-			await addMessage('user', need);
-			input = '';
-			await requestTurn(need);
-		} finally {
-			busy = false;
-		}
-	}
+	async function submitStory() { await sendChatMessage(input, undefined, true); }
+	async function appendStory() { await sendChatMessage(input); addingStory = false; }
+	async function answerTime(value: string) { await sendChatMessage(value, 'incidentTime'); }
+	async function answerLocation(value: string) { await sendChatMessage(value, 'incidentLocation'); }
+	async function answerNeed(value: string) { await sendChatMessage(value, 'need'); }
 
 	async function skipCurrent() {
 		if (chatStep === 'time') await answerTime('Belum diketahui');
@@ -821,8 +700,8 @@
 			await submitStory();
 			return;
 		}
-		if (chatStep === 'open' || isLikelySideMessage(input)) {
-			await sendFreeMessage();
+		if (chatStep === 'open') {
+			await sendChatMessage(input);
 			return;
 		}
 		if (!input.trim()) {
@@ -906,16 +785,9 @@
 			privacyCheckbox?.focus();
 			return;
 		}
-		if (
-			forcedSubmitState === 'offline' ||
-			(typeof navigator !== 'undefined' && !navigator.onLine)
-		) {
+		if (typeof navigator !== 'undefined' && !navigator.onLine) {
 			submitError =
 				'Perangkat sedang offline. Draf belum dikirim. Sambungkan kembali lalu coba lagi.';
-			return;
-		}
-		if (forcedSubmitState === 'error') {
-			submitError = 'Penyimpanan gagal. Draf belum dikirim dan bukti penerimaan tidak dibuat.';
 			return;
 		}
 
@@ -980,10 +852,8 @@
 	}
 
 	async function reset() {
-		void fetch('/api/chat/session', { method: 'DELETE', keepalive: true }).catch(() => {});
+		await fetch('/api/chat/session', { method: 'DELETE' }).catch(() => {});
 		chatSession = null;
-		draftId = '';
-		draftVersion = 0;
 		idempotencyKey = '';
 		nextMessageId = 1;
 		stage = 'start';
@@ -1077,7 +947,7 @@
 				<div class="privacy-strip">
 					<strong>Gunakan perangkat yang aman.</strong>
 					<p>
-						Isian tersimpan setelah Anda mengirim. Pola NIK, nomor, email, dan nama yang jelas
+						Pesan chat tersimpan saat dikirim. Laporan resmi dibuat setelah Anda memeriksa dan mengonfirmasi draf. Pola NIK, nomor, email, dan nama yang jelas
 						diredaksi sebelum cerita dapat diproses AI. Redaksi bersifat best-effort. Jangan
 						masukkan data orang lain tanpa izin.
 					</p>
@@ -1412,7 +1282,7 @@
 								bind:value={input}
 								onkeydown={handleComposerKeydown}
 								rows={handoffOpen || addingStory || chatStep === 'story' || chatStep === 'open' ? 4 : 2}
-								maxlength={handoffOpen || addingStory || chatStep === 'story' || chatStep === 'open' ? 2000 : 500}
+								maxlength={MESSAGE_LIMIT}
 								placeholder={composerPlaceholder}
 								aria-describedby="composer-help"
 							></textarea>
@@ -1431,8 +1301,7 @@
 								{:else if addingStory}
 									Tambahan cerita akan masuk ke keterangan Anda.
 								{:else if chatStep === 'open'}
-									Percakapan tetap terbuka sampai Anda menekan Selesai. Gunakan Tambah cerita
-									agar tambahan masuk ke draf.
+									Percakapan tetap terbuka sampai Anda menekan Selesai. Keterangan tambahan ikut masuk ke draf yang dapat Anda periksa.
 								{:else}
 									Anda bisa bertanya soal alur kapan saja. Jangan masukkan data orang lain
 									tanpa izin.
@@ -1481,7 +1350,7 @@
 				<section class="review-section" aria-labelledby="story-review-title">
 					<h3 id="story-review-title">Cerita Anda</h3>
 					<label for="review-story">Keterangan pelapor</label>
-					<textarea id="review-story" rows="4" maxlength="2000" bind:value={story}></textarea>
+					<textarea id="review-story" rows="4" maxlength={STORY_LIMIT} bind:value={story}></textarea>
 					<p class="field-help">
 						Tulisan ini adalah keterangan Anda, bukan kesimpulan petugas.
 					</p>

@@ -82,7 +82,7 @@ export function maskNik(value: string | null | undefined) {
  */
 export function maskSensitiveText(value: string) {
 	return value
-		.replace(/\b\d{16}\b/g, '[NIK disamarkan]')
+		.replace(/(?<!\d)(?:\d[\s.\-]?){15}\d(?![\s.\-]?\d)/g, '[NIK disamarkan]')
 		.replace(
 			/(?<!\w)(?:\+62|62|0)[\s-]*8[\d\s-]{7,14}\d(?!\w)/g,
 			'[nomor disamarkan]'

@@ -176,3 +176,9 @@ describe('isSafeQuestionForField', () => {
 		expect(isSafeQuestionForField('Apakah Anda ingin melapor ke polisi?', 'need')).toBe(false);
 	});
 });
+
+describe('NIK dengan pemisah', () => {
+	it.each(['0000 0000 0000 0001', '0000-0000-0000-0001', '0000.0000.0000.0001', '0000000000000001'])('menyamarkan %s', (nik) => {
+		expect(redactSensitive(`NIK ${nik}.`)).not.toContain(nik);
+	});
+});

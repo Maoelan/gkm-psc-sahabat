@@ -2,13 +2,14 @@ import type { Cookies } from '@sveltejs/kit';
 import { randomUUID } from 'node:crypto';
 import { db } from './db';
 import { secureCookies } from './env';
-import { hashSecret, randomToken, verifyPassword } from './crypto';
+import { hashPassword, hashSecret, randomToken, verifyPassword } from './crypto';
 import { recordAudit } from './audit';
 import { releaseStaffHandoffs } from './handoffs';
 import { allowAttempt, resetAttempts } from './rate-limit';
 
 export const STAFF_COOKIE = 'lapor_aman_staff';
 const STAFF_SESSION_SECONDS = 8 * 60 * 60;
+const dummyPasswordHash = hashPassword(randomToken(32));
 
 export type StaffRole = 'petugas' | 'bidan_pic' | 'admin' | 'auditor';
 
@@ -119,6 +120,7 @@ export async function authenticateStaff(
 	};
 
 	if (!staff || !staff.active) {
+		verifyPassword(password, dummyPasswordHash);
 		await recordAudit({
 			actorType: 'anonymous',
 			action: 'staff.login.failed',
@@ -135,22 +137,20 @@ export async function authenticateStaff(
 			objectId: staff.id,
 			requestId: context.requestId
 		});
-		return {
-			ok: false as const,
-			status: 423,
-			message: 'Akun terkunci sementara. Hubungi admin layanan atau coba lagi nanti.'
-		};
+		verifyPassword(password, dummyPasswordHash);
+		return genericError;
 	}
 
 	if (!verifyPassword(password, staff.password_hash)) {
-		const failed = staff.failed_login_attempts + 1;
-		const lockedUntil = failed >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null;
-		await db.query(
+		const attempt = await db.query<{ failed_login_attempts: number; locked_until: Date | null }>(
 			`UPDATE staff_users
-			 SET failed_login_attempts = $2, locked_until = $3
-			 WHERE id = $1`,
-			[staff.id, failed, lockedUntil]
+			 SET failed_login_attempts = CASE WHEN locked_until <= now() THEN 1 ELSE failed_login_attempts + 1 END,
+			     locked_until = CASE WHEN (CASE WHEN locked_until <= now() THEN 1 ELSE failed_login_attempts + 1 END) >= 5
+			                         THEN now() + interval '15 minutes' ELSE NULL END
+			 WHERE id = $1 RETURNING failed_login_attempts, locked_until`, [staff.id]
 		);
+		const failed = attempt.rows[0].failed_login_attempts;
+		const lockedUntil = attempt.rows[0].locked_until;
 		await recordAudit({
 			actorType: 'anonymous',
 			action: 'staff.login.failed',
@@ -254,7 +254,7 @@ export function hasStaffCsrf(request: Request, staff: StaffSession) {
 }
 
 export function defaultStaffRoute(staff: StaffSession) {
-	if (hasStaffRole(staff, ['bidan_pic', 'admin'])) return '/rekap';
+	if (hasStaffRole(staff, ['admin'])) return '/rekap';
 	if (hasStaffRole(staff, ['petugas'])) return '/petugas';
-	return '/masuk';
+	return '/petugas/ganti-akun';
 }

@@ -9,7 +9,7 @@
 	} from '../../lib/reports';
 	import type { PageProps } from './$types';
 
-	type ViewState = 'ready' | 'loading' | 'empty' | 'error';
+	type ViewState = 'ready' | 'empty' | 'error';
 
 	let { data }: PageProps = $props();
 	// Antrean awal dari server; perubahan berikutnya berasal dari aksi di halaman ini.
@@ -201,13 +201,7 @@
 			</div>
 		</div>
 
-		{#if viewState === 'loading'}
-			<section class="state-panel loading-state" aria-live="polite" aria-busy="true">
-				<h2>Memuat laporan</h2>
-				<p>Mohon tunggu sebentar.</p>
-				<div class="loading-row"></div><div class="loading-row short"></div><div class="loading-row"></div>
-			</section>
-		{:else if viewState === 'empty'}
+		{#if viewState === 'empty'}
 			<section class="state-panel empty-state">
 				<h2>{data.isAdmin ? 'Belum ada laporan' : 'Belum ada laporan dalam penugasan Anda'}</h2>
 				<p>
@@ -488,9 +482,6 @@
 	.state-panel h2 { margin: 0; font-size: 1.25rem; }
 	.error-state { border-color: #d99599; background: #fff7f7; }
 	.error-state .button-secondary { margin-top: 18px; }
-	.loading-state { justify-items: stretch; text-align: left; padding-inline: min(12vw, 160px); }
-	.loading-row { height: 48px; margin-top: 12px; background: #e7edef; }
-	.loading-row.short { width: 66%; }
 	.mobile-back { display: none; }
 
 	@media (max-width: 860px) {

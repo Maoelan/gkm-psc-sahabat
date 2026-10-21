@@ -1,13 +1,10 @@
+import { FIELD_LIMITS, STORY_LIMIT, isServiceQuestion, isUnknownAnswer, type AnswerField } from '../chat';
+import type { ChatFields } from '../chat';
+export type { ChatFields } from '../chat';
 import { env, isAiEnabled } from './env';
 
 export type MissingField = 'incident_time' | 'incident_location' | 'need';
 export type FollowUpSource = 'nvidia' | 'fallback';
-
-export type ChatFields = {
-	incidentTime: string;
-	incidentLocation: string;
-	need: string;
-};
 
 export type ChatHistoryMessage = {
 	role: 'user' | 'assistant';
@@ -21,6 +18,7 @@ export type ChatTurnResult = {
 	missingField: MissingField | null;
 	source: FollowUpSource;
 	flowComplete: boolean;
+	fields?: ChatFields;
 };
 
 type FieldRule = {
@@ -109,12 +107,15 @@ Batas:
 
 Aturan output:
 - Keluarkan JSON valid saja, tanpa penjelasan dan tanpa markdown.
-- Bentuk: {"reply":"...","next_field":"incident_time|incident_location|need|null","question":"... atau null"}
+- Bentuk: {"reply":"...","next_field":"incident_time|incident_location|need|null","question":"... atau null","extracted_fields":{"incidentTime":null,"incidentLocation":null,"need":null}}
 - reply berisi 0-2 kalimat tanggapan dan tidak boleh mengandung tanda tanya.
 - question berisi tepat satu pertanyaan. Jika alur belum lengkap, question wajib menanyakan topik next_field dan tidak menanyakan topik lain. Jika alur sudah lengkap, question boleh null atau satu pertanyaan opsional yang aman.
 - Jangan mencampur ajakan menekan tombol atau pernyataan penutup ke dalam question; taruh di reply.
 - Saat alur baru lengkap, sebut tombol Selesai atau pilihan menambah cerita di reply.
 - next_field wajib salah satu key di remaining_fields jika alur belum lengkap. Jika alur sudah lengkap, next_field harus null.
+- extracted_fields hanya berisi kutipan persis dari story atau last_answer, bukan ringkasan atau fakta buatan. Maksimal waktu 160, lokasi 200, kebutuhan 300 karakter. Pakai null bila tidak jelas.
+- Pahami konteks: "sekarang saya di rumah" bukan lokasi kejadian. "takut pulang malam" bukan waktu kejadian. "belum tahu bantuan" bukan kebutuhan yang sudah jelas. Pertanyaan layanan tidak mengisi field.
+- Jangan mengubah field yang sudah diisi/dilewati. Pilih next_field dari bagian yang masih kosong setelah ekstraksi. Bila semua lengkap, next_field dan question null.
 - Jangan menyalin contoh atau fallback; susun kalimat sendiri.`;
 
 function fieldValue(fields: ChatFields, field: MissingField) {
@@ -149,7 +150,7 @@ export function isMissingField(value: unknown): value is MissingField {
  */
 export function redactSensitive(value: string) {
 	return value
-		.replace(/\b\d{16}\b/g, '[NIK dihapus]')
+		.replace(/(?<!\d)(?:\d[\s.\-]?){15}\d(?![\s.\-]?\d)/g, '[NIK dihapus]')
 		.replace(/(?<!\w)(?:\+62|62|0)[\s-]*8[\d\s-]{7,14}\d(?!\w)/g, '[nomor dihapus]')
 		.replace(/\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/g, '[email dihapus]')
 		.replace(
@@ -232,16 +233,17 @@ export function fallbackChatTurn(remainingFields: MissingField[]): ChatTurnResul
 
 export type ChatTurnInput = {
 	fields: ChatFields;
-	remainingFields: MissingField[];
 	story: string;
 	lastAnswer?: string;
 	history?: ChatHistoryMessage[];
+	answerField?: AnswerField;
 };
 
 type ParsedAiTurn = {
 	reply?: unknown;
 	question?: unknown;
 	next_field?: unknown;
+	extracted_fields?: unknown;
 };
 
 function parseAiTurn(raw: string): ParsedAiTurn | null {
@@ -261,12 +263,45 @@ function parseAiTurn(raw: string): ParsedAiTurn | null {
 	}
 }
 
+export function extractQuotedFields(fields: ChatFields, extracted: unknown, evidence: string): ChatFields {
+	const result = { ...fields };
+	if (!extracted || typeof extracted !== 'object') return result;
+	for (const key of Object.keys(FIELD_LIMITS) as AnswerField[]) {
+		const value = (extracted as Record<string, unknown>)[key];
+		if (result[key] || typeof value !== 'string') continue;
+		const quote = value.trim();
+		const sentence = evidence.split(/(?<=[.!?])\s+|\n+/).find((part) => part.includes(quote));
+		if (key !== 'need' && sentence &&
+			/\b(?:sekarang|saat ini|takut pulang|ingin pulang)\b/i.test(sentence) &&
+			!/\b(?:kejadian|terjadi|berlangsung)\b/i.test(sentence)) continue;
+		if (quote && quote.length <= FIELD_LIMITS[key] && sentence &&
+			!isServiceQuestion(sentence) && !isUnknownAnswer(sentence) && !sentence.endsWith('?')) {
+			result[key] = quote;
+		}
+	}
+	return result;
+}
+
+export function directAnswerFields(fields: ChatFields, answer: string, key?: AnswerField): ChatFields {
+	if (!key || fields[key] || !answer || isServiceQuestion(answer) || answer.includes('?')) return { ...fields };
+	if (isUnknownAnswer(answer)) return { ...fields, [key]: 'Belum diketahui' };
+	// Without a model, accept only short explicit answers to the question being asked.
+	if (answer.length > FIELD_LIMITS[key]) return { ...fields };
+	return { ...fields, [key]: answer };
+}
+
 export async function makeChatTurn(input: ChatTurnInput): Promise<ChatTurnResult> {
-	const { fields, remainingFields, story, lastAnswer = '', history = [] } = input;
-	const flowComplete = remainingFields.length === 0;
+	const { story, lastAnswer = '', history = [] } = input;
+	let fields = { ...input.fields };
+	let remainingFields = remainingChatFields(fields);
+	let flowComplete = remainingFields.length === 0;
+	const fallback = (acceptDirectAnswer = true) => {
+		if (acceptDirectAnswer) fields = directAnswerFields(fields, lastAnswer, input.answerField);
+		return { ...fallbackChatTurn(remainingChatFields(fields)), fields };
+	};
 	const apiKey = env.NVIDIA_API_KEY;
 	if (!isAiEnabled() || !apiKey) {
-		return fallbackChatTurn(remainingFields);
+		return fallback();
 	}
 
 	try {
@@ -284,7 +319,8 @@ export async function makeChatTurn(input: ChatTurnInput): Promise<ChatTurnResult
 								? 'Alur wajib sudah lengkap. Tanggapi pesan terakhir secara natural. Jangan menanyakan waktu, lokasi, atau kebutuhan lagi. Pilih next_field null.'
 								: 'Tanggapi pesan terakhir secara natural. Lalu pilih satu topik dari remaining_fields dan tanyakan dengan tepat satu pertanyaan.',
 							flow_complete: flowComplete,
-							story: redactSensitive(story).slice(0, 2000),
+							answer_field: input.answerField ?? null,
+							story: redactSensitive(story).slice(0, STORY_LIMIT),
 							known_fields: {
 								incident_time: redactSensitive(fields.incidentTime).slice(0, 160) || null,
 								incident_location: redactSensitive(fields.incidentLocation).slice(0, 200) || null,
@@ -294,7 +330,7 @@ export async function makeChatTurn(input: ChatTurnInput): Promise<ChatTurnResult
 								key: field,
 								topic: fieldRules[field].label
 							})),
-							last_answer: lastAnswer ? redactSensitive(lastAnswer).slice(0, 500) : null,
+							last_answer: lastAnswer ? redactSensitive(lastAnswer).slice(0, 2000) : null,
 							recent_messages: history.slice(-8).map((message) => ({
 								role: message.role,
 								body: redactSensitive(message.body).slice(0, 500)
@@ -315,7 +351,13 @@ export async function makeChatTurn(input: ChatTurnInput): Promise<ChatTurnResult
 		};
 		const raw = payload.choices?.[0]?.message?.content?.trim() ?? '';
 		const parsed = parseAiTurn(raw);
-		if (!parsed) return fallbackChatTurn(remainingFields);
+		if (!parsed) return fallback();
+
+		fields = extractQuotedFields(fields, parsed.extracted_fields, `${redactSensitive(story)}\n${redactSensitive(lastAnswer)}`);
+		if (!parsed.extracted_fields) fields = directAnswerFields(fields, lastAnswer, input.answerField);
+		if (input.answerField && isUnknownAnswer(lastAnswer) && !isServiceQuestion(lastAnswer)) fields[input.answerField] = 'Belum diketahui';
+		remainingFields = remainingChatFields(fields);
+		flowComplete = remainingFields.length === 0;
 
 		const rawReply = typeof parsed.reply === 'string' ? redactSensitive(parsed.reply.trim()) : '';
 		const rawQuestion =
@@ -324,7 +366,7 @@ export async function makeChatTurn(input: ChatTurnInput): Promise<ChatTurnResult
 
 		if (flowComplete) {
 			const optionalQuestion = isSafeOptionalQuestion(rawQuestion) ? rawQuestion : null;
-			if (!safeReply && !optionalQuestion) return fallbackChatTurn(remainingFields);
+			if (!safeReply && !optionalQuestion) return fallback(false);
 			const message = joinMessage(safeReply, optionalQuestion);
 			const messageWithFinish = /selesai/i.test(message) ? message : `${message} ${FINISH_HINT}`;
 			return {
@@ -333,6 +375,7 @@ export async function makeChatTurn(input: ChatTurnInput): Promise<ChatTurnResult
 				question: optionalQuestion,
 				missingField: null,
 				source: 'nvidia',
+				fields,
 				flowComplete: true
 			};
 		}
@@ -345,7 +388,7 @@ export async function makeChatTurn(input: ChatTurnInput): Promise<ChatTurnResult
 			requestedField && isSafeQuestionForField(rawQuestion, requestedField)
 				? requestedField
 				: (remainingFields.find((field) => isSafeQuestionForField(rawQuestion, field)) ?? null);
-		if (!nextField) return fallbackChatTurn(remainingFields);
+		if (!nextField) return fallback(false);
 
 		return {
 			message: joinMessage(safeReply, rawQuestion),
@@ -353,9 +396,10 @@ export async function makeChatTurn(input: ChatTurnInput): Promise<ChatTurnResult
 			question: rawQuestion,
 			missingField: nextField,
 			source: 'nvidia',
+			fields,
 			flowComplete: false
 		};
 	} catch {
-		return fallbackChatTurn(remainingFields);
+		return fallback();
 	}
 }

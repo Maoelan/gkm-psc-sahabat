@@ -557,7 +557,7 @@ export async function getActiveChatSessions(staff: StaffSession): Promise<Active
 		 ) last ON true
 		 WHERE cs.status = 'active'
 		   AND cs.expires_at > now()
-		   AND NOT EXISTS (SELECT 1 FROM chat_handoffs ch WHERE ch.session_id = cs.id)
+		   AND NOT EXISTS (SELECT 1 FROM chat_handoffs ch WHERE ch.session_id = cs.id AND ch.status IN ('waiting', 'active'))
 		   AND NOT EXISTS (SELECT 1 FROM reports r WHERE r.source_session_id = cs.id)
 		 ORDER BY last.created_at DESC
 		 LIMIT 20`
