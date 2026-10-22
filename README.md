@@ -6,6 +6,8 @@ This branch uses **SvelteKit 3, Svelte 5, and Convex**, with a **Vercel Node.js 
 
 Use this application for evaluation with **synthetic data only**. This is not an operational victim-reporting service.
 
+Evaluation portal: [lapor-aman-evaluation.vercel.app](https://lapor-aman-evaluation.vercel.app). Staff sign in at `/masuk`; passwords are distributed privately. The deployed backend belongs to the separate `lapor-aman-evaluation` Convex project.
+
 ## Reporting and staff workflows
 
 - `/chat`: victim details, optional NIK (Indonesian national identification number), incident narrative, editable draft, privacy confirmation, and submission receipt with a copyable reference code.
@@ -156,6 +158,8 @@ npm run build
 ```
 
 Production browser tests use port 5176 and their own build origin. The final regular build restores the local configured origin. Browser coverage includes responsive navigation, chat retries, handoff, private question editing and manual sending, draft confirmation, preserved edits, summaries, decisions, NIK, and Excel. Test screenshots and downloads contain synthetic data only.
+
+`tests/e2e/deployed_smoke.py` verifies an existing HTTPS evaluation deployment. It requires `EVALUATION_BASE_URL`, `DEMO_STAFF_ADMIN_PASSWORD`, and an explicit `ALLOW_EVALUATION_WRITE=true` opt-in. It creates a clearly marked synthetic report and decision, exercises staff guidance and export permissions, then logs out. Run it only against the intended mock environment; it is not a read-only probe.
 
 ## Security boundaries
 

@@ -41,7 +41,7 @@ jobs:
           PUBLIC_BASE_URL: https://evaluation.example.test
 
       - name: Audit dependencies
-        run: npm audit --audit-level=low
+        run: npm audit --audit-level=low --fetch-timeout=30000 --fetch-retries=2 --fetch-retry-mintimeout=1000 --fetch-retry-maxtimeout=5000
 
   integration:
     runs-on: ubuntu-latest
