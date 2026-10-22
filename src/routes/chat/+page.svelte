@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { dev } from '$app/env';
 	import { onMount, tick } from 'svelte';
+	import { hasContactNumber } from '../../lib/contact';
+	import VictimDetails from '../../lib/components/VictimDetails.svelte';
+	import { emptyVictimProfile } from '../../lib/victim';
 	import { modeCopy, SERVICE_HOURS_LABEL, type ServiceMode } from '../../lib/service-mode';
-	import { appendReportStory, STORY_LIMIT, MESSAGE_LIMIT, type AnswerField, type ChatFields } from '../../lib/chat';
+	import { appendReportStory, isUnknownAnswer, STORY_LIMIT, MESSAGE_LIMIT, type AnswerField, type ChatFields } from '../../lib/chat';
 	import { isValidNik, maskNik, normalizeNik } from '../../lib/reports';
 	import {
 		handoffStatusCopy,
@@ -53,11 +56,17 @@
 
 	let nextMessageId = 1;
 	let stage = $state<Stage>('start');
+	let copyStatus = $state('');
+	async function copyReference() {
+		try { await navigator.clipboard.writeText(referenceCode); copyStatus = 'Kode laporan disalin.'; }
+		catch { copyStatus = 'Kode belum dapat disalin. Catat atau ambil tangkapan layar kode di atas.'; }
+	}
 	let chatStep = $state<ChatStep>('story');
 	let messages = $state<Message[]>([]);
 	let safetyChoice = $state('');
 	let relation = $state('');
 	let victimName = $state('');
+	let victimProfile = $state(emptyVictimProfile());
 	let victimNik = $state('');
 	let story = $state('');
 	let incidentTime = $state('');
@@ -128,7 +137,7 @@
 			: addingStory
 				? 'Tambahkan bagian cerita yang belum sempat Anda tulis.'
 				: chatStep === 'story'
-					? 'Ceritakan dengan kata-kata sendiri. Boleh belum lengkap.'
+					? 'Ceritakan urutan kejadian dengan kata-kata sendiri. Waktu, tempat, dan kebutuhan boleh dilengkapi sambil bercerita.'
 					: chatStep === 'open'
 						? 'Tulis tanggapan, pertanyaan, atau tambahan cerita.'
 						: chatStep === 'time'
@@ -257,6 +266,7 @@
 	function draftPayload() {
 		return {
 			victimName: victimName.trim(),
+			profile: { ...victimProfile, reporterName: relation === 'Diri sendiri' ? victimName.trim() : victimProfile.reporterName, coordinationDetails: victimProfile.coordination === 'Sudah' ? victimProfile.coordinationDetails : '' },
 			victimNik: normalizeNik(victimNik),
 			relation,
 			story: story.trim(),
@@ -300,7 +310,8 @@
 		if (message.sender === 'staff') return 'Petugas LAPOR AMAN';
 		if (message.sender === 'service' || message.source === 'handoff') return 'LAPOR AMAN';
 		if (message.source === 'guide') return 'Panduan LAPOR AMAN';
-		if (message.source === 'fallback' && serviceMode === 'ai' && aiEnabled) {
+		if (message.source === 'nvidia' || message.source === 'ai') return 'Asisten AI';
+		if (message.source === 'fallback' && aiEnabled) {
 			return 'Panduan LAPOR AMAN';
 		}
 		return assistantLabel;
@@ -564,6 +575,7 @@
 				error?: string;
 				handoff?: ReporterHandoff | null;
 				messages?: HandoffThreadMessage[];
+				collectedFields?: Partial<ChatFields>;
 				latestMessageId?: string | null;
 			};
 			if (!response.ok) throw new Error(payload.error || 'Status bantuan belum dapat dimuat.');
@@ -574,6 +586,15 @@
 				if (isHandoffOpen(handoff.status) && stage === 'review') stage = 'chat';
 			}
 			if (payload.messages?.length) await mergeHandoffMessages(payload.messages);
+			if (stage === 'chat' && payload.collectedFields) {
+				const fields = payload.collectedFields;
+				if (fields.incidentTime && (!incidentTime || isUnknownAnswer(incidentTime))) incidentTime = fields.incidentTime;
+				if (fields.incidentLocation && (!incidentLocation || isUnknownAnswer(incidentLocation))) incidentLocation = fields.incidentLocation;
+				if (fields.need && (!need || isUnknownAnswer(need))) need = fields.need;
+				if (!handoffOpen && chatStep !== 'story') {
+					chatStep = !incidentTime ? 'time' : !incidentLocation ? 'location' : !need ? 'need' : 'open';
+				}
+			}
 			if (payload.latestMessageId) lastHandoffMessageId = payload.latestMessageId;
 		} catch {
 			// Polling berikutnya dicoba lagi; kesalahan sesi permanen ditangani di atas.
@@ -628,7 +649,7 @@
 			return;
 		}
 		const name = victimName.trim();
-		if (name.length < 2) {
+		if (name && name.length < 2) {
 			identityError = 'Tulis nama korban atau nama panggilan sedikitnya 2 karakter.';
 			nameInput?.focus();
 			return;
@@ -760,7 +781,7 @@
 		}
 		submitError = '';
 		const name = victimName.trim();
-		if (name.length < 2) {
+		if (name && name.length < 2) {
 			submitError = 'Tulis nama korban atau nama panggilan sedikitnya 2 karakter.';
 			nameReviewInput?.focus();
 			return;
@@ -778,6 +799,11 @@
 		if (!contactPreference) {
 			submitError = 'Pilih apakah Anda aman dihubungi sebelum mengirim.';
 			contactNo?.focus();
+			return;
+		}
+		if (contactPreference === 'yes' && !hasContactNumber(contactDetails)) {
+			submitError = 'Tulis nomor HP Anda sebagai pelapor, atau pilih tidak bersedia dihubungi.';
+			document.getElementById('contact-details')?.focus();
 			return;
 		}
 		if (!privacyRead) {
@@ -862,6 +888,7 @@
 		safetyChoice = '';
 		relation = '';
 		victimName = '';
+		victimProfile = emptyVictimProfile();
 		victimNik = '';
 		nikEditing = false;
 		story = '';
@@ -876,6 +903,7 @@
 		identityError = '';
 		chatError = '';
 		submitError = '';
+		copyStatus = '';
 		referenceCode = '';
 		submittedAt = '';
 		busy = false;
@@ -901,62 +929,38 @@
 				<div><dt>Waktu</dt><dd>{submittedAt} WITA</dd></div>
 			</dl>
 			<p class="receipt-note">
-				Laporan tersimpan di database LAPOR AMAN dan masuk antrean pemeriksaan petugas. Kode
-				terbit setelah server menyimpan laporan. Petugas berwenang kemudian mencatat keputusan, dan
-				notifikasi hanya berisi pemberitahuan umum.
+				Petugas akan memeriksa isi laporan dan mencatat keputusan tindak lanjut. Simpan kode di atas; jangan membagikannya kepada orang yang tidak berwenang.
 			</p>
+			<p class="copy-status" role="status">{copyStatus}</p>
 			<div class="receipt-actions">
+				<button class="button-secondary" type="button" onclick={copyReference}>Salin kode laporan</button>
 				<button class="button-primary" type="button" onclick={reset}>Buat laporan baru</button>
 				<a class="button-secondary" href="/">Kembali ke beranda</a>
 			</div>
 		</section>
 	{:else}
 		<header class="chat-page-heading">
-			<h1 tabindex="-1" bind:this={startHeading}>Chat Pengaduan</h1>
+			<h1 tabindex="-1" bind:this={startHeading}>Buat laporan</h1>
 			<a class="page-back" href="/">Kembali ke beranda</a>
 		</header>
 
+		{#if stage !== 'start'}
+			<ol class="report-steps" aria-label="Tahapan laporan">
+				<li class:current={stage === 'identity'} class:complete={stage !== 'identity'} aria-current={stage === 'identity' ? 'step' : undefined}><span>1</span> Data korban</li>
+				<li class:current={stage === 'chat'} class:complete={stage === 'review'} aria-current={stage === 'chat' ? 'step' : undefined}><span>2</span> Cerita kejadian</li>
+				<li class:current={stage === 'review'} aria-current={stage === 'review' ? 'step' : undefined}><span>3</span> Periksa & kirim</li>
+			</ol>
+		{/if}
 		{#if stage === 'start'}
 			<section class="start-card" aria-labelledby="start-title">
 				<h2 id="start-title">Sebelum mulai</h2>
-				<div
-					class="mode-panel"
-					class:mode-operator={serviceMode === 'operator'}
-					class:mode-unavailable={serviceMode === 'unavailable'}
-				>
-					<span class="mode-dot" aria-hidden="true"></span>
-					<div>
-						<strong>{modeLabel}</strong>
-						<p>{modeDescription}</p>
-					</div>
-				</div>
-				<p class:closed={!handoffAvailable} class="mode-hours">
-					{#if handoffAvailable}
-						Bantuan petugas langsung tersedia. Jam layanan: {SERVICE_HOURS_LABEL}.
-					{:else}
-						Bantuan petugas langsung belum tersedia. Jam layanan: {SERVICE_HOURS_LABEL}.
-					{/if}
-				</p>
-				{#if dev && !handoffAvailable}
-					<p class="dev-mode-link">
-						Mode pengembangan:
-						<a href="?mode=operator">buka mode layanan petugas</a> untuk menguji bantuan langsung.
-					</p>
-				{/if}
-
-				<div class="privacy-strip">
-					<strong>Gunakan perangkat yang aman.</strong>
-					<p>
-						Pesan chat tersimpan saat dikirim. Laporan resmi dibuat setelah Anda memeriksa dan mengonfirmasi draf. Pola NIK, nomor, email, dan nama yang jelas
-						diredaksi sebelum cerita dapat diproses AI. Redaksi bersifat best-effort. Jangan
-						masukkan data orang lain tanpa izin.
-					</p>
-				</div>
+				<p class="start-intro">Anda akan menulis cerita, memeriksa isinya, lalu mengirim laporan kepada petugas. Tidak perlu membuat akun.</p>
+				<p class="start-privacy">Pesan tersimpan saat dikirim. Cerita dapat diproses asisten AI NVIDIA; AI tidak menggantikan petugas. Hindari menulis NIK atau kontak di dalam cerita. <a href="/panduan#privasi" target="_blank" rel="noopener">Baca rincian privasi</a>.</p>
 
 				{#if safetyChoice !== 'unsafe'}
 					<div class="safety-question">
 						<h3 tabindex="-1" bind:this={safetyHeading}>Apakah aman bagi Anda menulis di perangkat ini?</h3>
-						<p>Jika ada orang lain yang dapat melihat layar ini, jangan lanjutkan di perangkat ini.</p>
+						<p>Pastikan tidak ada orang yang membahayakan Anda dapat melihat layar atau pesan ini.</p>
 						<div class="safety-actions">
 							<button class="button-primary" type="button" onclick={chooseSafe}>
 								Ya, saya aman
@@ -984,6 +988,32 @@
 					</div>
 				{/if}
 
+				<details class="service-details" open><summary>Siapa yang membantu saya?</summary>				<div
+					class="mode-panel"
+					class:mode-operator={serviceMode === 'operator'}
+					class:mode-unavailable={serviceMode === 'unavailable'}
+				>
+					<span class="mode-dot" aria-hidden="true"></span>
+					<div>
+						<strong>{modeLabel}</strong>
+						<p>{modeDescription}</p>
+					</div>
+				</div>
+				<p class:closed={!handoffAvailable} class="mode-hours">
+					{#if handoffAvailable}
+						Bantuan petugas langsung tersedia. Jam layanan: {SERVICE_HOURS_LABEL}.
+					{:else}
+						Bantuan petugas langsung belum tersedia. Jam layanan: {SERVICE_HOURS_LABEL}.
+					{/if}
+				</p>
+				{#if dev && !handoffAvailable}
+					<p class="dev-mode-link">
+						Mode pengembangan:
+						<a href="?mode=operator">buka mode layanan petugas</a> untuk menguji bantuan langsung.
+					</p>
+				{/if}
+</details>
+
 				<div class="start-links">
 					<a href="/panduan" target="_blank" rel="noopener">Baca panduan dulu</a>
 					<span aria-hidden="true">·</span>
@@ -996,11 +1026,9 @@
 			</section>
 		{:else if stage === 'identity'}
 			<section class="identity-card" aria-labelledby="identity-title">
-				<p class="step-kicker">Langkah 1 dari 3 · Data minimum</p> <!-- taste-skill-ignore: label progres fungsional -->
 				<h2 id="identity-title" tabindex="-1" bind:this={identityHeading}>Sedikit tentang korban</h2>
 				<p class="identity-lead">
-					Nama korban wajib diisi. NIK opsional dan hanya dapat dilihat akun berwenang untuk
-					tindak lanjut.
+					Data korban dianjurkan untuk membantu pemeriksaan, tetapi boleh dikosongkan jika belum diketahui atau belum aman untuk disampaikan. NIK tetap opsional.
 				</p>
 
 				<fieldset class="relation-field">
@@ -1039,7 +1067,7 @@
 				</fieldset>
 
 				<div class="field">
-					<label for="victim-name">Nama lengkap atau nama panggilan korban</label>
+					<label for="victim-name">Nama lengkap atau nama panggilan korban (opsional)</label>
 					<input
 						bind:this={nameInput}
 						id="victim-name"
@@ -1054,6 +1082,7 @@
 					</p>
 				</div>
 
+				<details class="optional-identity"><summary>Isi NIK korban (opsional)</summary><p class="field-help">Anda tetap dapat melapor tanpa mengisi NIK.</p>
 				<div class="field">
 					<label for="victim-nik">NIK korban <span class="optional-label">(opsional)</span></label>
 					<input
@@ -1072,7 +1101,9 @@
 						dicatat dalam audit.
 					</p>
 				</div>
+				</details>
 
+				<VictimDetails bind:profile={victimProfile} {relation} prefix="initial" />
 				{#if identityError}<p class="form-error" role="alert">{identityError}</p>{/if}
 
 				<div class="identity-actions">
@@ -1085,11 +1116,11 @@
 		{/if}
 
 {#if stage === 'chat'}
-			<section class="chat-card" aria-label="Percakapan pengaduan">
+			<section class="chat-card chronology-chat" aria-label="Percakapan pengaduan">
 				<header class="chat-card-bar">
 					<div>
 						<h2>Percakapan</h2>
-						<p>{modeLabel}</p>
+						<p>{handoff?.status === 'active' ? 'Petugas LAPOR AMAN' : modeLabel}</p>
 					</div>
 					<div class="chat-bar-actions">
 						{#if !handoffOpen}
@@ -1200,7 +1231,7 @@
 						>
 							<strong>
 								{messageLabel(message)}
-								{#if message.source === 'fallback' && serviceMode === 'ai' && aiEnabled}
+								{#if message.source === 'fallback' && aiEnabled}
 									<span class="message-source">Panduan terstruktur</span>
 								{/if}
 							</strong>
@@ -1210,14 +1241,12 @@
 				</div>
 
 				<div class="composer">
-					{#if chatStep === 'open'}
-						<div class:finish-locked={handoffOpen} class="finish-bar">
+					{#if chatStep === 'open' && !handoffOpen}
+						<div class="finish-bar">
 							<div class="finish-copy">
-								<strong>{handoffOpen ? 'Bantuan petugas masih terbuka' : 'Sudah cukup?'}</strong>
+								<strong>Sudah cukup?</strong>
 								<p>
-									{handoffOpen
-										? 'Selesaikan percakapan dengan petugas sebelum membuka draf.'
-										: 'Anda bisa terus menulis atau menyelesaikan percakapan untuk memeriksa draf.'}
+									Anda bisa terus menulis atau menyelesaikan percakapan untuk memeriksa draf.
 								</p>
 							</div>
 							<button
@@ -1225,9 +1254,9 @@
 								type="button"
 								bind:this={reviewButton}
 								onclick={openReview}
-								disabled={handoffOpen}
+								disabled={busy || handoffBusy}
 							>
-								{handoffOpen ? 'Menunggu bantuan petugas' : 'Selesai dan periksa draf'}
+								Selesai dan periksa draf
 							</button>
 						</div>
 					{/if}
@@ -1330,16 +1359,14 @@
 				</div>
 			</section>
 			<p class="chat-footnote">
-				Laporan tersimpan di server LAPOR AMAN dan masuk antrean petugas. Jangan bagikan kode laporan
-				kepada orang yang tidak berwenang.
+				Pesan Anda tersimpan. Laporan resmi masuk ke antrean petugas setelah Anda memeriksa draf dan menekan kirim.
 			</p>
 		{:else if stage === 'review'}
 			<section class="review-card" aria-labelledby="review-title">
 				<header class="review-header">
 					<div>
-						<p class="step-kicker">Langkah 3 dari 3 · Sebelum kirim</p> <!-- taste-skill-ignore: label progres fungsional -->
 						<h2 id="review-title" tabindex="-1" bind:this={reviewHeading}>Periksa draf Anda</h2>
-						<p>Ini masih draf. Perbaiki bagian yang belum tepat, lalu konfirmasi.</p>
+						<p>Baca kembali cerita dan data di bawah. Semua bagian masih bisa Anda ubah sebelum dikirim.</p>
 						<p class="review-mode">
 							{modeLabel}. Laporan akan masuk ke meja petugas setelah dikirim.
 						</p>
@@ -1357,7 +1384,7 @@
 				</section>
 
 				<section class="review-section" aria-labelledby="summary-review-title">
-					<h3 id="summary-review-title">Ringkasan terstruktur</h3>
+					<h3 id="summary-review-title">Data laporan</h3>
 					<div class="review-grid">
 						<label class="field field-wide"
 							>Nama korban
@@ -1439,7 +1466,8 @@
 				</section>
 
 				<section class="review-section contact-section" aria-labelledby="contact-title">
-					<h3 id="contact-title">Preferensi kontak aman</h3>
+					<VictimDetails bind:profile={victimProfile} {relation} prefix="review" />
+					<h3 id="contact-title">Apakah Anda bersedia dihubungi petugas?</h3>
 					<p>Petugas tidak akan menghubungi Anda tanpa izin. Pilih kondisi yang paling aman.</p>
 					<fieldset>
 						<legend class="sr-only">Apakah Anda aman dihubungi?</legend>
@@ -1461,7 +1489,7 @@
 								<input type="radio" bind:group={contactPreference} value="yes" />
 								<span
 									><strong>Aman dihubungi</strong><small
-										>Saya akan menulis cara dan waktu yang aman.</small
+										>Saya bersedia menuliskan kontak saya sebagai pelapor dan waktu yang aman.</small
 									></span
 								>
 							</label>
@@ -1469,7 +1497,7 @@
 					</fieldset>
 					{#if contactPreference === 'yes'}
 						<div class="field">
-							<label for="contact-details">Cara, waktu, dan batasan kontak yang aman</label>
+							<label for="contact-details">Nomor HP Anda sebagai pelapor, waktu, dan batasan kontak yang aman</label>
 							<textarea
 								id="contact-details"
 								rows="3"
@@ -1489,9 +1517,10 @@
 
 				<section class="privacy-section" aria-labelledby="privacy-title">
 					<h3 id="privacy-title">Pemberitahuan privasi</h3>
-					<ul>
+					<p>Cerita dan data Anda disimpan untuk pemeriksaan petugas. NIK tidak wajib. Asisten AI NVIDIA dapat memproses cerita setelah pola identitas yang jelas disamarkan; penyamaran tidak menjamin seluruh identitas terhapus.</p>
+					<details class="privacy-details"><summary>Baca data yang diproses dan batas akses</summary>					<ul>
 						<li>Tujuan: menyiapkan dan memeriksa pengaduan.</li>
-						<li>Data: cerita, ringkasan, nama/hubungan, NIK opsional, dan preferensi kontak.</li>
+						<li>Data: cerita, ringkasan, hubungan dengan korban, data korban opsional (termasuk tanggal lahir, alamat, orang tua, pendidikan, pekerjaan, status perkawinan, dan kehamilan), dugaan jenis kekerasan, koordinasi, serta izin dan kontak pelapor.</li>
 						<li>
 							Akses NIK: hanya akun berwenang dengan peran admin yang dapat membuka NIK. Daftar
 							meja petugas tidak menampilkan NIK. Setiap pembukaan dicatat dalam audit.
@@ -1513,6 +1542,7 @@
 					<p>
 						<a href="/panduan#privasi" target="_blank" rel="noopener">Baca rincian privasi</a>
 					</p>
+					</details>
 					<label class="privacy-check">
 						<input
 							bind:this={privacyCheckbox}
@@ -1584,7 +1614,7 @@
 	}
 	.start-card {
 		padding: 26px;
-		border-top: 4px solid var(--teal);
+		border-top: 1px solid var(--border);
 	}
 	.start-card > h2 {
 		margin: 0 0 16px;
@@ -1597,7 +1627,7 @@
 		display: flex;
 		gap: 12px;
 		padding: 14px 16px;
-		border-left: 4px solid var(--teal);
+		border-left: 1px solid var(--teal);
 		background: var(--surface);
 	}
 	.mode-dot {
@@ -1633,14 +1663,7 @@
 		color: var(--teal-dark);
 		font-weight: 800;
 	}
-	.privacy-strip {
-		margin-top: 14px;
-		padding: 13px 16px;
-		border-left: 4px solid #d4a72c;
-		background: var(--attention);
-		color: #493a0b;
-	}
-	.privacy-strip p { margin: 4px 0 0; font-size: 0.88rem; }
+
 	.safety-question { margin-top: 26px; }
 	.safety-question h3 {
 		margin: 0;
@@ -1655,7 +1678,7 @@
 	.unsafe-panel {
 		margin-top: 26px;
 		padding: 18px;
-		border-left: 4px solid var(--danger);
+		border-left: 1px solid var(--danger);
 		background: #fff1f1;
 	}
 	.unsafe-panel h3 {
@@ -1679,15 +1702,7 @@
 	.start-footnote { margin: 12px 0 0; color: var(--muted); font-size: 0.82rem; }
 	.identity-card {
 		padding: 26px;
-		border-top: 4px solid var(--teal);
-	}
-	.step-kicker {
-		margin: 0 0 8px;
-		color: var(--teal-dark);
-		font-size: 0.76rem;
-		font-weight: 800;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
+		border-top: 1px solid var(--border);
 	}
 	.identity-card h2 {
 		margin: 0;
@@ -1761,7 +1776,7 @@
 	.chat-card {
 		display: flex;
 		flex-direction: column;
-		height: clamp(480px, calc(100dvh - 220px), 760px);
+		height: auto;
 		overflow: hidden;
 		border: 1px solid var(--border);
 		background: #fff;
@@ -1807,8 +1822,9 @@
 	.progress-track span.done { background: var(--teal); }
 	.chat-progress p { margin: 0; color: var(--muted); font-size: 0.78rem; }
 	.message-log {
-		flex: 1;
-		min-height: 0;
+		flex: 0 0 auto;
+		height: clamp(240px, 40dvh, 420px);
+		min-height: 240px;
 		overflow-y: auto;
 		display: flex;
 		flex-direction: column;
@@ -1840,7 +1856,7 @@
 		border: 1px solid #d9b8c8;
 		border-radius: 999px;
 		color: #8a3d62;
-		font-size: 0.62rem;
+		font-size: 0.75rem;
 		font-weight: 600;
 		letter-spacing: 0.04em;
 		text-transform: uppercase;
@@ -1903,7 +1919,7 @@
 		justify-content: space-between;
 		gap: 14px;
 		padding: 12px 18px;
-		border-left: 5px solid var(--yellow);
+		border-left: 1px solid var(--yellow);
 		border-bottom: 1px solid #e7d8a6;
 		background: var(--attention);
 		color: #493a0b;
@@ -1936,11 +1952,6 @@
 	}
 	.handoff-cancel:hover { background: rgb(255 255 255 / 55%); }
 	.handoff-cancel:disabled { opacity: 0.6; }
-	.finish-locked {
-		border-left-color: #b8830b;
-		background: var(--attention);
-	}
-	.finish-locked p { color: #5b470d; }
 	.composer {
 		flex: 0 0 auto;
 		padding: 14px 18px 12px;
@@ -2013,7 +2024,7 @@
 		gap: 12px;
 		margin-bottom: 12px;
 		padding: 12px 14px;
-		border-left: 4px solid var(--teal);
+		border-left: 1px solid var(--teal);
 		background: var(--surface-teal);
 	}
 	.finish-copy { flex: 1 1 320px; }
@@ -2153,10 +2164,14 @@
 		font-size: 0.84rem;
 	}
 	.chat-receipt {
+		background: #fff;
+		border: 1px solid var(--border);
+		border-radius: 16px;
+		text-align: center;
 		max-width: 680px;
 		margin: 32px auto;
 		padding: 40px;
-		border-top: 4px solid var(--teal);
+		border-top: 1px solid var(--border);
 	}
 	.chat-receipt h1 {
 		margin: 4px 0 0;
@@ -2203,8 +2218,7 @@
 		.start-links { flex-direction: column; align-items: flex-start; gap: 0; }
 		.start-links span { display: none; }
 		.chat-card {
-			height: calc(100dvh - 180px);
-			min-height: 460px;
+			height: auto;
 		}
 		.chat-card-bar { padding: 8px 12px; }
 		.chat-card-bar p { font-size: 0.7rem; }
@@ -2239,4 +2253,38 @@
 		.receipt-actions .button-primary,
 		.receipt-actions .button-secondary { width: 100%; }
 	}
+
+	.report-steps { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:16px 0 24px; padding:0; list-style:none; }
+	.report-steps li { display:flex; align-items:center; gap:8px; padding:12px 0; border-bottom:2px solid var(--border); font-size:.85rem; color:var(--muted); }
+	.report-steps li span { display:grid; place-items:center; width:25px; height:25px; flex-shrink:0; border:1px solid var(--border); border-radius:50%; font-size:.78rem; }
+	.report-steps li.current { color:var(--teal-dark); border-bottom-color:var(--teal); font-weight:700; }
+	.report-steps li.current span { border-color:var(--teal); background:var(--surface-teal); }
+	.report-steps li.complete { color:var(--teal-dark); }
+	.start-card,.identity-card,.review-card,.chat-card { border-radius:16px; border-top-width:1px; }
+	.start-card,.identity-card { padding:32px; }
+	.start-card h2,.identity-card h2,.review-header h2 { font-size:1.6rem; letter-spacing:-.02em; }
+	.start-intro { color:var(--ink); margin:12px 0; }
+	.start-privacy { color:var(--muted); font-size:.88rem; margin:12px 0 28px; }
+	.start-privacy a { color:var(--teal-dark); }
+	.safety-question { padding:24px; margin:0 0 20px; background:var(--surface-teal); border:0; border-radius:12px; }
+	.safety-question h3 { font-size:1.15rem; }
+	.safety-actions { margin-top:20px; }
+	.service-details { margin-top:20px; }
+	.service-details .mode-panel { margin:0 0 12px; }
+	.optional-identity { margin-top:24px; }
+	.optional-identity .field { margin:8px 0 20px; }
+	.copy-status { min-height:1.5em; color:var(--teal-dark); font-size:.9rem; }
+	@media(max-width:620px) {
+		.chat-page,.chat-page.chat-stage,.chat-page.review-stage { padding-top:20px; }
+		.start-card,.identity-card { padding:24px 20px; }
+		.safety-question { padding:20px 16px; }
+		.start-card h2,.identity-card h2,.review-header h2 { font-size:1.35rem; }
+		.report-steps { gap:8px; margin:8px 0 20px; }
+		.report-steps li { font-size:.73rem; gap:5px; align-items:start; flex-direction:column; }
+		.report-steps li span { width:24px; height:24px; }
+		.receipt-actions { flex-direction:column; }
+	}
+
+ .chronology-chat .message-log { height:clamp(360px,55dvh,680px); max-height:none; }
+ @media(max-width:600px) { .chronology-chat .message-log { height:clamp(300px,48dvh,540px); } }
 </style>

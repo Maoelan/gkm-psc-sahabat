@@ -1,4 +1,4 @@
-import { db } from './db';
+import { api, query } from './convex';
 import type { ServiceMode } from '../service-mode';
 
 type ScheduleRow = {
@@ -72,23 +72,10 @@ export function modeFromSchedule(
 export async function getServiceModeAt(date = new Date()): Promise<ServiceMode> {
 	const parts = zonedParts(date);
 	try {
-		const schedule = await db.query<ScheduleRow>(
-			`SELECT weekday, opens_at::text, closes_at::text, timezone
-			 FROM service_schedules
-			 WHERE weekday = $1
-			   AND effective_from <= $2
-			   AND (effective_to IS NULL OR effective_to >= $2)
-			 ORDER BY effective_from DESC
-			 LIMIT 1`,
-			[parts.weekday, parts.date]
-		);
-		const exception = await db.query<ExceptionRow>(
-			`SELECT is_closed, opens_at::text, closes_at::text
-			 FROM schedule_exceptions
-			 WHERE date = $1`,
-			[parts.date]
-		);
-		return modeFromSchedule(parts.minute, parts.weekday, schedule.rows[0], exception.rows[0]);
+		const { schedule, exception } = await query(api.sessions.schedule, { weekday: parts.weekday, date: parts.date });
+		return modeFromSchedule(parts.minute, parts.weekday,
+			schedule ? { weekday: schedule.weekday, opens_at: schedule.opensAt, closes_at: schedule.closesAt, timezone: 'Asia/Makassar' } : undefined,
+			exception ? { is_closed: exception.isClosed, opens_at: exception.opensAt ?? null, closes_at: exception.closesAt ?? null } : undefined);
 	} catch {
 		return 'unavailable';
 	}

@@ -10,7 +10,7 @@ export async function load({ cookies }) {
 	if (!hasStaffRole(staff, ['admin'])) redirect(303, '/petugas/ganti-akun');
 
 	try {
-		const [reports, outbox] = await Promise.all([getRecapReports(), getOutboxSummary()]);
+		const [reports, outbox] = await Promise.all([getRecapReports(staff), getOutboxSummary(staff)]);
 		return {
 			authenticated: true,
 			reports,

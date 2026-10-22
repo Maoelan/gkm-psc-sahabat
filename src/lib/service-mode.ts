@@ -13,9 +13,11 @@ export function modeCopy(mode: ServiceMode, aiEnabled: boolean): ModeCopy {
 	if (mode === 'operator') {
 		return {
 			label: 'Layanan petugas',
-			assistantLabel: 'Panduan LAPOR AMAN',
+			assistantLabel: aiEnabled ? 'Asisten AI' : 'Panduan LAPOR AMAN',
 			description:
-				'Laporan akan masuk ke meja petugas. Percakapan awal dipandu aplikasi untuk melengkapi draf; Anda dapat meminta bantuan petugas saat jam layanan, dan petugas meninjau setelah laporan dikirim.'
+				aiEnabled
+					? 'Asisten AI membantu percakapan awal. Anda dapat meminta bantuan petugas saat jam layanan; balasan otomatis AI dijeda ketika bantuan petugas aktif. Laporan masuk ke meja petugas setelah Anda memeriksa dan mengirim draf.'
+					: 'Percakapan awal memakai panduan terstruktur. Anda dapat meminta bantuan petugas saat jam layanan. Laporan masuk ke meja petugas setelah Anda memeriksa dan mengirim draf.'
 		};
 	}
 	if (mode === 'unavailable') {

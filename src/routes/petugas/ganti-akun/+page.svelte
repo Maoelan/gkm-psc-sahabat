@@ -10,7 +10,6 @@
 
 <div class="switch-page">
 	<section class="switch-card" aria-labelledby="switch-title">
-		<p class="step-kicker">Akses rekap</p>
 		<h1 id="switch-title">Beralih ke akun admin</h1>
 		<p class="switch-lead">
 			Anda masuk sebagai <strong>{data.staff.displayName}</strong>. Halaman rekap memuat NIK dan
@@ -58,14 +57,6 @@
 		border: 1px solid var(--border);
 		border-top: 4px solid var(--magenta);
 		background: #fff;
-	}
-	.step-kicker {
-		margin: 0 0 8px;
-		color: var(--teal-dark);
-		font-size: 0.76rem;
-		font-weight: 800;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
 	}
 	h1 {
 		margin: 0;

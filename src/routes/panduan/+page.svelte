@@ -5,7 +5,7 @@
 <div class="page-shell guide-page">
 	<header class="page-heading">
 		<div>
-			<h1>Kenali pilihan sebelum melapor.</h1>
+			<h1>Panduan melapor</h1>
 			<p>
 				Cerita inti sudah cukup untuk memulai. Anda tidak harus mengingat semua detail dan boleh
 				berhenti jika belum siap.
@@ -14,6 +14,7 @@
 		<a class="button-primary" href="/chat">Mulai chat pengaduan</a>
 	</header>
 
+	<nav class="guide-contents" aria-label="Isi panduan"><a href="#prep-title">Cara melapor</a><a href="#category-title">Yang dapat dilaporkan</a><a href="#privasi">Privasi data</a><a href="#bantuan">Pertolongan segera</a></nav>
 	<section class="guide-definition" aria-labelledby="definition-title">
 		<h2 id="definition-title">Apa fungsi LAPOR AMAN?</h2>
 		<p>
@@ -88,9 +89,13 @@
 					bukan jaminan anonimisasi. Bila penyedia gagal, pertanyaan cadangan dipakai.
 				</li>
 				<li>
-					Nama korban dipakai pada alur laporan. NIK korban opsional; server hanya menampilkan NIK
+					Nama, NIK, tanggal lahir, orang tua, alamat, jenis kelamin, pendidikan, pekerjaan, status perkawinan,
+					kehamilan, serta koordinasi dengan pihak lain dapat diisi jika diketahui. Data korban ini opsional dan
+					terenkripsi saat disimpan. Kolom identitas tidak dikirim ke AI. Server hanya menampilkan NIK
 					penuh kepada akun berwenang dengan peran admin setelah tindakan dan mencatat aksesnya.
-					Jangan masukkan foto identitas atau alamat lengkap.
+					Jangan masukkan foto identitas. Tulis alamat pada formulir data korban, bukan di chat.
+					Nomor HP diminta setelah kronologi jika Anda bersedia dihubungi; gunakan kontak Anda sebagai pelapor,
+					termasuk saat melaporkan kejadian yang dialami orang lain. Petugas berwenang dapat membuka kontak dengan pencatatan akses.
 				</li>
 				<li>
 					Notifikasi petugas saat ini tercatat di antrean aplikasi. Pengiriman WhatsApp memerlukan

@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
+	import StaffAssistancePanel from '../../../lib/components/StaffAssistance.svelte';
+	import type { StaffAssistance } from '../../../lib/assistance';
 	import {
 		handoffStatusCopy,
 		handoffStatusLabel,
@@ -27,6 +29,55 @@
 	let messages = $state<HandoffThreadMessage[]>([]);
 	let cursor = $state('');
 	let input = $state('');
+	let assistance = $state<StaffAssistance | null>(null);
+	let assistanceLoading = $state(false);
+	let assistanceError = $state('');
+	let replyInput = $state<HTMLTextAreaElement>();
+	let assistanceController: AbortController | undefined;
+	let assistanceKey = '';
+	let assistanceThread = '';
+	const assistanceRevision = $derived(messages.filter((message) => message.source !== 'handoff').map((message) => message.id).join(':'));
+	$effect(() => {
+		const id = selectedId;
+		const revision = assistanceRevision;
+		if (canReply && detailsOpen && revision) untrack(() => { void refreshAssistance(id, revision); });
+		else untrack(() => { assistanceController?.abort(); assistanceLoading = false; assistanceKey = ''; });
+	});
+
+	async function refreshAssistance(id = selectedId, revision = assistanceRevision, refresh = false) {
+		if (!id || !canReply) return;
+		const key = `${id}:${revision}`;
+		if (!refresh && assistanceKey === key) return;
+		assistanceKey = key;
+		assistanceController?.abort();
+		const controller = new AbortController();
+		assistanceController = controller;
+		if (assistanceThread !== id) { assistance = null; assistanceThread = id; }
+		assistanceLoading = true; assistanceError = '';
+		try {
+			const response = await fetch(`/api/staff/chats/${encodeURIComponent(id)}/assistance`, {
+				method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': data.csrfToken },
+				body: JSON.stringify({ refresh }), signal: controller.signal
+			});
+			const payload = await response.json() as { assistance?: StaffAssistance; error?: string };
+			if (controller.signal.aborted || selectedId !== id) return;
+			if (!response.ok || !payload.assistance) throw new Error(payload.error || 'Panduan belum dapat dimuat.');
+			assistance = payload.assistance;
+		} catch (caught) {
+			if (!controller.signal.aborted && selectedId === id) assistanceError = caught instanceof Error ? caught.message : 'Panduan belum dapat dimuat.';
+		} finally {
+			if (assistanceController === controller) assistanceLoading = false;
+		}
+	}
+
+	async function useSuggestedQuestion(question: string) {
+		if (input.includes(question)) { replyInput?.focus(); return; }
+		const next = input.trim() ? `${input.trim()}\n\n${question}` : question;
+		if (next.length > 2000) { error = 'Balasan terlalu panjang untuk menambah pertanyaan. Ringkas balasan Anda terlebih dahulu.'; return; }
+		input = next;
+		await tick(); replyInput?.focus();
+	}
+
 	let error = $state('');
 	let notice = $state('');
 	let busy = $state(false);
@@ -52,6 +103,7 @@
 		timer = setTimeout(poll, 3000);
 		return () => {
 			pageMounted = false;
+			assistanceController?.abort();
 			if (timer) clearTimeout(timer);
 		};
 	});
@@ -193,7 +245,7 @@
 			messages = [];
 			cursor = '';
 			detailsOpen = true;
-			notice = 'Percakapan diambil alih. AI dijeda dan pelapor melihat petugas bergabung.';
+			notice = 'Percakapan diambil alih. Balasan otomatis AI dijeda; panduan petugas tetap membantu Anda.';
 			await loadThread(selectedId);
 			await refreshQueue();
 		} catch (caught) {
@@ -350,29 +402,15 @@
 	<section class="live-shell">
 		<header class="live-title">
 			<div>
-				<p class="eyebrow">Meja petugas</p>
+
 				<h1>Percakapan langsung</h1>
-				<p>
-					Masuk sebagai <strong>{data.staff.displayName}</strong>. Ambil permintaan pelapor atau
-					percakapan yang sedang berjalan, balas di thread yang sama, lalu tutup percakapan saat
-					selesai.
+				<p>Ambil percakapan untuk membantu pelapor. Setelah selesai membalas, tutup percakapan agar pelapor dapat memeriksa dan mengirim laporannya.
 				</p>
 			</div>
-			<div class="live-title-actions">
-				<a class="button-secondary" href="/petugas">Meja laporan</a>
-				<a class="button-secondary" href="/">Portal publik</a>
-			</div>
+
 		</header>
 
-		<div class="live-notice">
-			<strong>Akses admin.</strong>
-			<span>
-				Petugas, bidan, dan admin memakai akses admin. Permintaan bantuan dan percakapan yang
-				sedang berjalan tampil di antrean; ambil alih percakapan untuk menjeda AI. NIK, nomor, dan
-				email disamarkan di percakapan. Setiap pembukaan transkrip, pengambilalihan, balasan, dan
-				penutupan dicatat dalam audit.
-			</span>
-		</div>
+		<div class="live-notice"><strong>Saat Anda bergabung, balasan otomatis AI dijeda.</strong><span>Panduan petugas membantu menemukan keterangan dan menyusun pertanyaan. Anda tetap memeriksa dan mengirim balasan sendiri.</span></div>
 
 		{#if data.serviceMode === 'ai'}
 			<div class="live-hours" role="status">
@@ -504,7 +542,7 @@
 					{:else if !handoff && selected?.status === 'waiting'}
 						<div class="live-waiting">
 							<button class="mobile-back" type="button" onclick={backToQueue}>Kembali ke antrean</button>
-							<p class="eyebrow">Permintaan baru</p>
+
 							<h2 tabindex="-1" bind:this={threadHeading}>Ambil percakapan ini?</h2>
 							<p>
 								Transkrip baru terbuka setelah Anda mengambil percakapan. AI pelapor sedang
@@ -530,7 +568,7 @@
 								<button class="mobile-back" type="button" onclick={backToQueue}
 									>Kembali ke antrean</button
 								>
-								<p class="eyebrow">{handoffStatusLabel(handoff.status)}</p>
+								<p class="thread-status">{handoffStatusLabel(handoff.status)}</p>
 								<h2 tabindex="-1" bind:this={threadHeading}>Percakapan pelapor</h2>
 								<p>
 									Diminta {relativeTime(handoff.requestedAt)}
@@ -548,6 +586,7 @@
 							{handoffStatusCopy(handoff.status)}
 						</div>
 
+						<div class="live-conversation" class:with-assistance={canReply}>
 						<div class="live-log" bind:this={log} role="log" aria-live="polite" aria-label="Pesan percakapan">
 							{#if messages.length === 0}
 								<p class="live-log-empty">Belum ada pesan dalam percakapan ini.</p>
@@ -567,11 +606,15 @@
 							{/if}
 						</div>
 
+						{#if canReply}<StaffAssistancePanel {assistance} loading={assistanceLoading} error={assistanceError} disabled={busy} onrefresh={() => refreshAssistance(selectedId, assistanceRevision, true)} onuse={useSuggestedQuestion} />{/if}
+						</div>
+
 						{#if canReply}
 							<form class="live-reply" onsubmit={sendReply}>
 								<label for="staff-reply">Balas pelapor</label>
 								<textarea
 									id="staff-reply"
+									bind:this={replyInput}
 									bind:value={input}
 									maxlength="2000"
 									rows="3"
@@ -616,42 +659,35 @@
 		gap: 24px;
 		padding-bottom: 20px;
 	}
-	.eyebrow {
-		margin: 0 0 4px;
-		color: var(--magenta-dark);
-		font-size: 0.72rem;
-		font-weight: 800;
-		letter-spacing: 0.1em;
-		text-transform: uppercase;
-	}
+
 	.live-title h1 {
 		margin: 0;
 		font-family: var(--font-display);
-		font-size: clamp(2rem, 4vw, 3rem);
+		font-size: 1.65rem;
 		line-height: 1.05;
 		letter-spacing: -0.035em;
 	}
 	.live-title p:last-child { max-width: 70ch; margin: 10px 0 0; color: var(--muted); }
-	.live-title-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+
 	.live-notice {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 4px 8px;
 		margin-bottom: 18px;
 		padding: 12px 14px;
-		border-left: 4px solid var(--yellow);
-		background: var(--attention);
-		color: #493a0b;
+		border: 0;
+		background: var(--surface);
+		color: var(--muted);
 		font-size: 0.84rem;
 	}
-	.live-notice strong { flex: 0 0 auto; }
+	.live-notice strong { flex: 0 1 auto; min-width:0; }
 	.live-hours {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 4px 8px;
 		margin: -8px 0 18px;
 		padding: 10px 14px;
-		border-left: 4px solid var(--navy);
+		border-left: 1px solid var(--navy);
 		background: var(--surface);
 		color: var(--muted);
 		font-size: 0.82rem;
@@ -725,7 +761,7 @@
 		text-align: left;
 	}
 	.live-row:hover { background: #f4faf8; }
-	.live-row.selected { box-shadow: inset 4px 0 0 var(--magenta); background: #fff5f9; }
+	.live-row.selected { background: var(--surface-teal); outline: 1px solid var(--teal); outline-offset: -1px; }
 	.live-row.waiting { background: #fffdf3; }
 	.live-row.waiting:hover { background: #fff9df; }
 	.live-row-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -753,7 +789,7 @@
 		display: flex;
 		flex-direction: column;
 		min-height: 560px;
-		max-height: calc(100dvh - 190px);
+		max-height: none;
 		overflow: hidden;
 	}
 	.live-thread-head {
@@ -843,12 +879,12 @@
 	.live-reply-actions .button-primary { min-height: 46px; }
 	.live-waiting { padding: 36px 28px; }
 	.live-waiting h2 { margin: 0; font-size: 1.4rem; }
-	.live-waiting p:not(.eyebrow) { max-width: 54ch; margin: 10px 0 18px; color: var(--muted); }
+	.live-waiting p { max-width: 54ch; margin: 10px 0 18px; color: var(--muted); }
 	.live-readonly { padding: 12px 18px; border-top: 1px solid var(--rule); background: var(--surface); color: var(--muted); font-size: 0.82rem; }
 	.live-error {
 		margin: 10px 18px 14px;
 		padding: 9px 11px;
-		border-left: 3px solid var(--danger);
+		border-left: 1px solid var(--danger);
 		background: #fff1f1;
 		color: var(--danger);
 		font-size: 0.84rem;
@@ -862,7 +898,7 @@
 
 	@media (max-width: 900px) {
 		.live-title { flex-direction: column; }
-		.live-title-actions { justify-content: flex-start; }
+
 		.live-grid { grid-template-columns: 1fr; min-height: 0; }
 		.live-thread { max-height: none; min-height: 480px; }
 		.live-grid.thread-open .live-queue { display: none; }
@@ -872,9 +908,8 @@
 	@media (max-width: 540px) {
 		.live-page { padding: 18px 0 40px; }
 		.live-shell { width: calc(100% - 32px); }
-		.live-title h1 { font-size: 2rem; }
-		.live-title-actions { width: 100%; }
-		.live-title-actions .button-secondary { width: 100%; }
+		.live-title h1 { font-size: 1.5rem; }
+
 		.live-thread-head { flex-direction: column; padding: 14px; }
 		.live-thread-head .button-secondary { width: 100%; }
 		.live-thread-head .danger-button { width: 100%; }
@@ -884,4 +919,11 @@
 		.live-reply-actions { flex-direction: column; align-items: stretch; }
 		.live-reply-actions .button-primary { width: 100%; }
 	}
+
+	.live-grid { grid-template-columns:minmax(240px,.5fr) minmax(0,1.5fr); }
+	.live-conversation { display:grid; grid-template-columns:minmax(0,1fr); min-width:0; }
+	.live-conversation.with-assistance { grid-template-columns:minmax(0,1fr) 290px; }
+	.live-conversation .live-log { height:clamp(280px,45dvh,480px); min-height:280px; }
+	@media(max-width:1300px) { .live-conversation.with-assistance { grid-template-columns:minmax(0,1fr); } }
+	@media(max-width:900px) { .live-grid { grid-template-columns:minmax(0,1fr); } }
 </style>

@@ -1,118 +1,29 @@
-<script lang="ts">
-	const schedule = [
-		['Senin - Kamis', '08.00 - 14.00 WITA'],
-		['Jumat', '08.00 - 11.00 WITA'],
-		['Sabtu', '08.00 - 12.30 WITA'],
-		['Minggu', 'Tidak ada petugas']
-	];
-
-	const steps = [
-		{
-			title: 'Mulai dengan aman',
-			text: 'Baca info privasi, lalu tentukan nama panggilan dan hubungan Anda dengan korban.'
-		},
-		{
-			title: 'Ceritakan satu per satu',
-			text: 'Tulis cerita inti, lalu jawab pertanyaan singkat. Detail yang belum diketahui boleh dilewati.'
-		},
-		{
-			title: 'Periksa lalu kirim',
-			text: 'Perbaiki draf dan pilih preferensi kontak. Kode terbit setelah laporan tersimpan.'
-		}
-	];
-</script>
-
-<svelte:head>
-	<title>LAPOR AMAN | Pengaduan UPT Puskesmas Suranadi</title>
-</svelte:head>
-
-<section class="home-hero">
-	<div class="home-hero-inner">
-		<div class="hero-copy">
-			<h1>Lapor dengan aman.</h1>
-			<p class="hero-lead">
-				LAPOR AMAN membantu Anda menyiapkan pengaduan kekerasan terhadap perempuan dan anak.
-				Anda menentukan informasi apa yang siap ditulis dan dikirim.
-			</p>
-			<div class="hero-actions">
-				<a class="button-primary" href="/chat">Mulai Chat Pengaduan</a>
-				<a class="button-secondary" href="/panduan">Pelajari caranya</a>
-			</div>
-			<ul class="reassurance-list" aria-label="Hal penting sebelum memulai">
-				<li>Boleh melewati detail yang belum diketahui</li>
-				<li>Draf dapat diperiksa sebelum dikirim</li>
-				<li>Anda dapat berhenti atau keluar cepat kapan saja</li>
-			</ul>
+<svelte:head><title>PSC SAHABAT | Pelaporan UPT Puskesmas Suranadi</title></svelte:head>
+<div class="welcome-page">
+	<section class="welcome-intro" aria-labelledby="welcome-title">
+		<div class="welcome-copy">
+			<h1 id="welcome-title">PSC SAHABAT</h1>
+ <p class="program-title">Pengaduan, Pendampingan dan Rujukan Terpadu bagi Perempuan dan Anak Korban Kekerasan</p>
+ <p class="program-motto">“Satu laporan, satu pendamping, satu jalur perlindungan”</p>
+			<p class="welcome-lead">Ceritakan kejadian kepada petugas UPT Puskesmas Suranadi melalui layanan LAPOR AMAN. Portal ini ditujukan bagi masyarakat di wilayah kerja Puskesmas Suranadi.</p>
+			<p>Mulai dari yang Anda ingat. Anda boleh memakai nama panggilan dan melewati detail yang belum diketahui.</p>
+			<div class="welcome-actions"><a class="button-primary" href="/chat">Mulai buat laporan <span aria-hidden="true">→</span></a><a class="text-link" href="/panduan">Baca panduan melapor</a></div>
+			<p class="welcome-reassurance">Tidak perlu membuat akun. Anda memeriksa isi laporan sebelum mengirim.</p>
 		</div>
-
-		<div class="hero-guide">
-			<div class="hero-guide-copy">
-				<h2>Cerita inti sudah cukup.</h2>
-				<p>Anda tidak harus menyiapkan semua jawaban sebelum memulai.</p>
-			</div>
-			<img
-				class="hero-companion"
-				src="/illustrations/lapor-aman-perempuan-anak.png"
-				alt="Ilustrasi perempuan dan anak yang saling mendampingi"
-				width="1024"
-				height="1536"
-				fetchpriority="high"
-			/>
-		</div>
+		<aside class="welcome-companion" aria-label="Pendamping pelapor"><img src="/illustrations/lapor-aman-perempuan-anak.png" alt="Ilustrasi perempuan dan anak yang saling mendampingi" width="1024" height="1536" fetchpriority="high" /><p>Untuk diri sendiri,<br />keluarga, atau orang yang Anda dampingi.</p></aside>
+	</section>
+	<section class="report-journey" aria-labelledby="journey-title"><h2 id="journey-title">Begini cara melapor</h2><ol>
+		<li><span aria-hidden="true">1</span><div><h3>Kenalkan korban</h3><p>Pilih hubungan Anda dengan korban. Data korban opsional, tetapi dianjurkan jika diketahui. NIK tidak wajib.</p></div></li>
+		<li><span aria-hidden="true">2</span><div><h3>Ceritakan kejadian</h3><p>Tulis dengan kata-kata sendiri. Fokus pada kronologi. Asisten membantu melengkapi waktu, lokasi umum, dan kebutuhan.</p></div></li>
+		<li><span aria-hidden="true">3</span><div><h3>Periksa dan kirim</h3><p>Perbaiki isi, pilih kontak yang aman, lalu kirim. Simpan kode laporan yang muncul.</p></div></li>
+	</ol></section>
+	<section class="education-invitation"><div><h2>Kenali bentuk kekerasan</h2><p>Pelajari kekerasan fisik, psikis, seksual, penelantaran, perdagangan orang, dan eksploitasi. Anda tidak harus menentukan jenisnya sebelum mulai bercerita.</p></div><a class="button-secondary" href="/edukasi">Buka halaman edukasi</a></section>
+ <div class="welcome-information">
+		<section class="service-information" aria-labelledby="service-title"><h2 id="service-title">Tentang bantuan petugas</h2><p>Laporan dapat disiapkan dan dikirim di luar jam layanan. Petugas memeriksa laporan dan menentukan tindak lanjut; penanganan berlangsung di luar aplikasi.</p>
+		<details><summary>Lihat jam layanan petugas <span>WITA</span></summary><dl class="service-schedule"><div><dt>Senin–Kamis</dt><dd>08.00–14.00</dd></div><div><dt>Jumat</dt><dd>08.00–11.00</dd></div><div><dt>Sabtu</dt><dd>08.00–12.30</dd></div><div><dt>Minggu</dt><dd>Tidak ada petugas</dd></div></dl><p>Jam buka tidak menjamin petugas sedang bebas. Status bantuan langsung ditampilkan sebelum Anda mulai.</p></details>
+		<details><summary>Apa peran asisten AI?</summary><p>AI membantu pertanyaan tentang alur dan melengkapi draf. AI tidak mengambil keputusan, memberi diagnosis, atau menggantikan petugas.</p></details></section>
+		<aside class="urgent-help"><h2>Butuh pertolongan segera?</h2><p>Jika Anda dalam bahaya, hubungi layanan darurat atau orang tepercaya di sekitar Anda. Jangan menunggu balasan aplikasi.</p><a href="/panduan#bantuan">Baca panduan keselamatan</a><p class="small-copy">Tombol Keluar cepat membuka Google. Riwayat browser dan jejak perangkat tetap ada.</p></aside>
 	</div>
-</section>
+</div>
 
-<section class="service-section" aria-labelledby="schedule-title">
-	<div class="section-shell service-grid">
-		<div class="service-intro">
-			<h2 id="schedule-title">Kapan petugas tersedia?</h2>
-			<p>
-				Jam buka tidak menjamin petugas sedang bebas. Di luar jam layanan, Anda tetap dapat
-				menyiapkan draf secara mandiri.
-			</p>
-		</div>
-		<ul class="schedule">
-			{#each schedule as row}
-				<li><span>{row[0]}</span><strong>{row[1]}</strong></li>
-			{/each}
-		</ul>
-		<p class="schedule-note">Di luar jam layanan, panduan aplikasi membantu Anda menyiapkan draf. Laporan tetap masuk ke antrean petugas setelah dikirim.</p>
-	</div>
-</section>
-
-<section class="section-shell process-section" aria-labelledby="process-title">
-	<div class="section-heading">
-		<h2 id="process-title">Tiga tahap yang mudah diikuti</h2>
-		<p>Tidak ada laporan resmi sebelum Anda membaca dan mengonfirmasi draf.</p>
-	</div>
-	<ol class="process-list">
-		{#each steps as item, index}
-			<li>
-				<span class="step-number" aria-hidden="true">{index + 1}</span>
-				<div><h3>{item.title}</h3><p>{item.text}</p></div>
-			</li>
-		{/each}
-	</ol>
-</section>
-
-<section class="home-boundary">
-	<div class="section-shell boundary-grid">
-		<div>
-			<h2>Aplikasi mencatat. Petugas menangani.</h2>
-			<p>
-				Penanganan, pendampingan, pengobatan, rehabilitasi, dan rujukan berlangsung di luar aplikasi
-				sesuai prosedur layanan.
-			</p>
-		</div>
-		<div class="boundary-notes">
-			<div class="safety-panel">
-				<strong>Butuh pertolongan segera?</strong>
-				<p>Hubungi layanan darurat atau orang tepercaya di sekitar Anda. Jangan menunggu balasan aplikasi jika Anda berada dalam bahaya.</p>
-			</div>
-			<div class="plain-note">
-				<strong>AI bukan petugas.</strong>
-				<p>AI membantu menanggapi pertanyaan alur, menanyakan satu bagian pelengkap, dan menyusun draf. AI tidak mengambil keputusan.</p>
-			</div>
-		</div>
-	</div>
-</section>
+<style>.program-title{font-size:clamp(1.15rem,2vw,1.45rem);font-weight:600;line-height:1.5;max-width:48ch}.program-motto{font-weight:600;color:var(--magenta);margin:22px 0}.education-invitation{display:flex;align-items:center;gap:32px;justify-content:space-between;padding:32px 0;border-block:1px solid var(--border);margin:24px 0}.education-invitation p{max-width:65ch;line-height:1.6}.education-invitation a{flex-shrink:0}@media(max-width:650px){.education-invitation{flex-direction:column;align-items:flex-start;gap:12px}}</style>

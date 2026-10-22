@@ -18,10 +18,16 @@ export const handle: Handle = async ({ event, resolve }) => {
 			const clientKey = hashSecret(address);
 			const path = event.url.pathname;
 			const limit = path === '/api/chat/session' ? 12 : path === '/masuk' ? 20 : path === '/api/chat/draft' ? 60 : 180;
-			if (!allowAttempt(`write:${clientKey}`, 240, 10 * 60_000) ||
-				!allowAttempt(`route:${clientKey}:${path}`, limit, 10 * 60_000)) {
+			let allowed = false;
+			try {
+				allowed = await allowAttempt(`write:${clientKey}`, 240, 10 * 60_000) &&
+					await allowAttempt(`route:${clientKey}:${path}`, limit, 10 * 60_000);
+			} catch {
+				rejected = Response.json({ error: 'Penyimpanan sedang tidak tersedia. Coba lagi nanti.' }, { status: 503 });
+			}
+			if (!rejected && !allowed) {
 				rejected = Response.json({ error: 'Terlalu banyak permintaan. Coba lagi nanti.' }, { status: 429, headers: { 'Retry-After': '600' } });
-			} else {
+			} else if (!rejected) {
 				try { resolvedEvent = { ...event, request: await boundedRequest(event.request) }; }
 				catch (error) {
 					if (!(error instanceof RequestBodyError)) throw error;

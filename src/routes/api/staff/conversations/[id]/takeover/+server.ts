@@ -12,7 +12,7 @@ export async function POST({ cookies, request, params, locals }) {
 	if (!z.uuid().safeParse(params.id).success) {
 		return json({ error: 'Percakapan tidak ditemukan.' }, { status: 404 });
 	}
-	if (!allowAttempt(`staff-takeover:${staff.staffId}`, 30, 10 * 60 * 1000)) {
+	if (!await allowAttempt(`staff-takeover:${staff.staffId}`, 30, 10 * 60 * 1000)) {
 		return json({ error: 'Terlalu banyak percobaan. Coba lagi nanti.' }, { status: 429 });
 	}
 

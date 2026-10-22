@@ -6,7 +6,7 @@ export async function GET({ cookies }) {
 	const staff = await requireStaffApi(cookies, ['admin']);
 	if (staff instanceof Response) return staff;
 	try {
-		return json({ reports: await getRecapReports() });
+		return json({ reports: await getRecapReports(staff) });
 	} catch {
 		return json({ error: 'Rekap tidak dapat dimuat.' }, { status: 503 });
 	}

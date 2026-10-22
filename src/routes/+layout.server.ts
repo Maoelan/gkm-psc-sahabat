@@ -7,6 +7,7 @@ export async function load({ cookies }) {
 			staff: staff
 				? {
 						displayName: staff.displayName,
+						username: staff.username,
 						roles: staff.roles,
 						csrfToken: staff.csrfToken
 					}
