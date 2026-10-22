@@ -13,7 +13,7 @@ try {
 	await client.connect();
 	await client.query(`CREATE SCHEMA ${schema}`);
 	await client.query(`SET search_path TO ${schema}`);
-	for (const migration of ['001_initial.sql', '002_chat_transcript.sql', '003_staff_handoff.sql']) await client.query(await readFile(new URL(`../db/${migration}`, import.meta.url), 'utf8'));
+	for (const migration of ['001_initial.sql', '002_chat_transcript.sql', '003_staff_handoff.sql', '004_staff_assistance.sql']) await client.query(await readFile(new URL(`../db/${migration}`, import.meta.url), 'utf8'));
 	const password = randomBytes(24).toString('base64url');
 	const salt = randomBytes(16);
 	const hash = `scrypt$16384$8$1$${salt.toString('base64')}$${scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1 }).toString('base64')}`;

@@ -13,7 +13,7 @@
 	<section class="nik-shell" aria-labelledby="nik-title">
 		<header class="nik-header">
 			<div>
-				<p class="eyebrow">Halaman khusus admin</p>
+
 				<h1 id="nik-title">Data NIK lengkap</h1>
 				<p>
 					Masuk sebagai <strong>{data.staff.displayName}</strong>. NIK ditampilkan tanpa sensor
@@ -29,9 +29,7 @@
 		<div class="nik-notice">
 			<strong>NIK tanpa sensor.</strong>
 			<span>
-				Halaman ini hanya dapat dibuka akun dengan peran admin. Petugas, bidan, dan admin memakai
-				peran admin. Setiap pembukaan halaman dicatat dalam audit. Jangan menyalin atau membagikan
-				NIK tanpa kebutuhan layanan.
+				Halaman ini memuat identitas korban dan hanya dapat dibuka admin. Setiap pembukaan dicatat. Pastikan layar tidak terlihat orang lain dan gunakan data hanya untuk kebutuhan layanan.
 			</span>
 		</div>
 
@@ -102,17 +100,10 @@
 		margin: 0 auto;
 		padding: 32px;
 		border: 1px solid var(--border);
-		border-top: 4px solid var(--teal);
+		border-top: 1px solid var(--border);
 		background: #fff;
 	}
-	.eyebrow {
-		margin: 0 0 8px;
-		color: var(--teal-dark);
-		font-size: 0.76rem;
-		font-weight: 800;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
-	}
+
 	.nik-header {
 		display: flex;
 		align-items: flex-start;
@@ -135,7 +126,7 @@
 		gap: 4px 8px;
 		margin: 24px 0 0;
 		padding: 14px 16px;
-		border-left: 4px solid #d4a72c;
+		border-left: 1px solid #d4a72c;
 		background: var(--attention);
 		color: #493a0b;
 		font-size: 0.88rem;
@@ -161,12 +152,12 @@
 		font-size: 0.76rem;
 		font-weight: 800;
 	}
-	.table-scroll { overflow-x: auto; }
+	.table-scroll { position: relative; max-width: 100%; overflow-x: auto; }
 	.nik-table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 0.9rem; }
 	.nik-table th {
 		padding: 12px 14px;
-		background: var(--navy);
-		color: #fff;
+		background: var(--surface);
+		color: var(--muted);
 		font-size: 0.74rem;
 		font-weight: 800;
 		letter-spacing: 0.02em;
@@ -204,7 +195,7 @@
 	.nik-empty h2 { margin: 0; font-size: 1.25rem; }
 	.nik-empty p { margin: 6px 0 18px; color: var(--muted); }
 
-	@media (max-width: 760px) {
+	@media (max-width: 1100px) {
 		.nik-page { padding: 24px 16px 56px; }
 		.nik-shell { padding: 24px 20px; }
 		.nik-header { flex-direction: column; }

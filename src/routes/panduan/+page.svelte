@@ -5,7 +5,7 @@
 <div class="page-shell guide-page">
 	<header class="page-heading">
 		<div>
-			<h1>Kenali pilihan sebelum melapor.</h1>
+			<h1>Panduan melapor</h1>
 			<p>
 				Cerita inti sudah cukup untuk memulai. Anda tidak harus mengingat semua detail dan boleh
 				berhenti jika belum siap.
@@ -14,6 +14,7 @@
 		<a class="button-primary" href="/chat">Mulai chat pengaduan</a>
 	</header>
 
+	<nav class="guide-contents" aria-label="Isi panduan"><a href="#prep-title">Cara melapor</a><a href="#category-title">Yang dapat dilaporkan</a><a href="#privasi">Privasi data</a><a href="#bantuan">Pertolongan segera</a></nav>
 	<section class="guide-definition" aria-labelledby="definition-title">
 		<h2 id="definition-title">Apa fungsi LAPOR AMAN?</h2>
 		<p>

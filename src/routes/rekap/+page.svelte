@@ -13,9 +13,8 @@
 
 	let { data }: PageProps = $props();
 	let filter = $state<Filter>('all');
-	// Pilihan awal dari server; filter dan pilihan berikutnya dikelola di halaman ini.
-	// svelte-ignore state_referenced_locally
-	let selectedId = $state(data.reports[0]?.id ?? '');
+	let search = $state('');
+	let selectedId = $state('');
 	let fullNik = $state('');
 	let nikStatus = $state('');
 	let exportStatus = $state('');
@@ -27,14 +26,16 @@
 	// svelte-ignore state_referenced_locally
 	let reports = $state<RecapReport[]>(data.reports);
 	let filtered = $derived.by(() => {
-		if (filter === 'open') return reports.filter((report) => !report.decision);
+		const query = search.trim().toLocaleLowerCase('id');
+		const matching = reports.filter((report) => !query || [report.id, report.victimName, report.need].some((value) => value.toLocaleLowerCase('id').includes(query)));
+		if (filter === 'open') return matching.filter((report) => !report.decision);
 		if (filter === 'follow_up_required') {
-			return reports.filter((report) => report.decision === 'follow_up_required');
+			return matching.filter((report) => report.decision === 'follow_up_required');
 		}
 		if (filter === 'follow_up_not_required') {
-			return reports.filter((report) => report.decision === 'follow_up_not_required');
+			return matching.filter((report) => report.decision === 'follow_up_not_required');
 		}
-		return reports;
+		return matching;
 	});
 	let summary = $derived.by(() => ({
 		total: reports.length,
@@ -42,7 +43,13 @@
 		followUp: reports.filter((report) => report.decision === 'follow_up_required').length,
 		noFollowUp: reports.filter((report) => report.decision === 'follow_up_not_required').length
 	}));
-	let selected = $derived(reports.find((report) => report.id === selectedId) ?? null);
+	let selected = $derived(filtered.find((report) => report.id === selectedId) ?? null);
+
+	function clearDetail() {
+		selectedId = '';
+		fullNik = '';
+		nikStatus = '';
+	}
 
 	async function lock() {
 		busy = true;
@@ -108,7 +115,6 @@
 	{#if !data.authenticated}
 		<section class="gate-shell" aria-labelledby="gate-title">
 			<div class="gate-main">
-				<p class="step-kicker">Akses terbatas</p> <!-- taste-skill-ignore: label peran akses -->
 				<h1 id="gate-title" tabindex="-1" bind:this={gateHeading}>Rekap laporan</h1>
 				<p class="gate-lead">
 					Halaman ini hanya terbuka untuk akun berwenang yang sudah masuk. Server memeriksa sesi
@@ -143,12 +149,8 @@
 		<section class="recap-shell" aria-labelledby="recap-title">
 			<header class="recap-header">
 				<div>
-					<p class="step-kicker">Ruang kerja admin</p> <!-- taste-skill-ignore: label ruang kerja -->
 					<h1 id="recap-title" tabindex="-1" bind:this={dashboardHeading}>Rekap laporan</h1>
-					<p>
-						Masuk sebagai <strong>{data.staff?.displayName ?? 'Admin'}</strong>. Rekap dibaca
-						langsung dari database LAPOR AMAN; laporan baru dari chat muncul setelah halaman dimuat
-						ulang.
+					<p>Lihat status dan hasil pemeriksaan laporan. Untuk mencatat keputusan, buka <a href="/petugas">Laporan masuk</a>.
 					</p>
 				</div>
 				<div class="recap-actions">
@@ -157,7 +159,7 @@
 						class="button-primary"
 						href="/api/staff/recap/export"
 						download
-						onclick={prepareExport}>Export .xlsx</a
+						onclick={prepareExport}>Unduh rekap Excel</a
 					>
 					<button class="button-secondary" type="button" onclick={lock} disabled={busy}
 						>{busy ? 'Mengunci...' : 'Keluar & kunci tampilan'}</button
@@ -208,9 +210,9 @@
 				</article>
 			</div>
 
-			<div class="recap-toolbar">
+			<div class="recap-toolbar"><label class="recap-search">Cari laporan<input type="search" bind:value={search} oninput={clearDetail} placeholder="Kode atau nama korban" /></label>
 				<label class="filter-control">Tampilkan
-					<select bind:value={filter}>
+					<select bind:value={filter} onchange={clearDetail}>
 						<option value="all">Semua laporan</option>
 						<option value="open">Belum diputuskan</option>
 						<option value="follow_up_required">Perlu tindak lanjut</option>
@@ -237,8 +239,8 @@
 			{:else if filtered.length === 0}
 				<section class="recap-empty">
 					<h2>Tidak ada laporan pada filter ini</h2>
-					<p>Pilih filter lain untuk melihat laporan yang tersedia.</p>
-					<button class="button-secondary" type="button" onclick={() => (filter = 'all')}
+					<p>Coba kata pencarian lain atau tampilkan semua laporan.</p>
+					<button class="button-secondary" type="button" onclick={() => { filter = 'all'; search = ''; }}
 						>Tampilkan semua</button
 					>
 				</section>
@@ -302,7 +304,6 @@
 				<section class="detail-card" aria-labelledby="detail-title">
 					<header class="detail-head">
 						<div>
-							<p class="step-kicker">Detail terbatas · admin</p> <!-- taste-skill-ignore: label akses detail -->
 							<h2 id="detail-title" tabindex="-1" bind:this={detailHeading}>Laporan {selected.id}</h2>
 							<p>Diterima {formatReportDate(selected.receivedAt)} WITA</p>
 						</div>
@@ -349,8 +350,7 @@
 					{/if}
 
 					<p class="detail-note">
-						NIK hanya untuk tindak lanjut petugas berwenang, misalnya koordinasi visum atau Dinas
-						Sosial. Gunakan sesuai kebutuhan layanan dan jangan dibagikan ke pihak lain.
+						Gunakan identitas hanya untuk kebutuhan tindak lanjut layanan. Jangan membagikannya kepada pihak yang tidak berwenang.
 					</p>
 				</section>
 			{/if}
@@ -374,10 +374,10 @@
 		grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
 		gap: 0;
 		max-width: 980px;
-		border-top: 4px solid var(--navy);
+		border-top: 1px solid var(--border);
 	}
 	.gate-main { padding: 38px; }
-	.step-kicker { margin: 0 0 8px; color: var(--teal-dark); font-size: 0.76rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
+
 	.gate-main h1,
 	.recap-header h1,
 	.detail-head h2 { margin: 0; font-family: var(--font-display); letter-spacing: -0.03em; line-height: 1.08; }
@@ -386,7 +386,7 @@
 	.gate-main h1[tabindex='-1']:focus,
 	.recap-header h1[tabindex='-1']:focus,
 	.detail-head h2[tabindex='-1']:focus { outline: none; }
-	.gate-notice { margin-top: 24px; padding: 15px 17px; border-left: 4px solid #d4a72c; background: var(--attention); color: #493a0b; font-size: 0.9rem; }
+	.gate-notice { margin-top: 24px; padding: 15px 17px; border-left: 1px solid #d4a72c; background: var(--surface); color: var(--muted); font-size: 0.9rem; }
 	.gate-notice p { margin: 4px 0 0; }
 	.gate-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
 	.gate-side { padding: 38px 30px; background: var(--surface-teal); border-left: 1px solid var(--border); }
@@ -395,23 +395,20 @@
 	.gate-side h2 { margin: 0; font-family: var(--font-display); font-size: 1.45rem; line-height: 1.15; }
 	.gate-side ul { display: grid; gap: 9px; margin: 16px 0 0; padding-left: 20px; color: #355d62; }
 	.gate-side-note { margin: 22px 0 0; padding-top: 14px; border-top: 1px solid #b8d4d0; color: #355d62; font-size: 0.84rem; }
-	.recap-shell { padding: 32px; border-top: 4px solid var(--teal); }
+	.recap-shell { padding: 32px; border-top: 1px solid var(--border); }
 	.recap-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; }
 	.recap-header > div:first-child { max-width: 760px; }
 	.recap-header h1 { margin-top: 4px; font-size: clamp(1.7rem, 2.6vw, 2rem); }
 	.recap-header p:last-child { margin: 12px 0 0; color: var(--muted); }
 	.recap-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
-	.recap-notice { margin: 24px 0 0; padding: 14px 16px; border-left: 4px solid #d4a72c; background: var(--attention); color: #493a0b; font-size: 0.88rem; }
+	.recap-notice { margin: 24px 0 0; padding: 14px 16px; border-left: 1px solid #d4a72c; background: var(--surface); color: var(--muted); font-size: 0.88rem; }
 	.recap-notice p { margin: 4px 0 0; }
 	.recap-notice .notification-status { margin-top: 10px; padding-top: 8px; border-top: 1px solid #dcc98c; }
 	.recap-notice code { padding: 1px 4px; background: rgb(255 255 255 / 55%); font-size: 0.8rem; }
 	.summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 26px; }
-	.summary-card { min-height: 132px; padding: 16px; border: 1px solid var(--border); background: #fff; border-top: 4px solid var(--teal); }
-	.summary-card.open { border-top-color: var(--yellow); }
-	.summary-card.follow { border-top-color: var(--magenta); }
-	.summary-card.no-follow { border-top-color: var(--navy); }
+	.summary-card { min-height: 112px; padding: 16px; border: 1px solid var(--border); background: #fff; border-top: 1px solid var(--border); }
 	.summary-card p { margin: 0; color: var(--muted); font-size: 0.82rem; font-weight: 750; }
-	.summary-card strong { display: block; margin-top: 8px; font-family: var(--font-display); font-size: 2.4rem; line-height: 1; }
+	.summary-card strong { display: block; margin-top: 8px; font-family: var(--font-display); font-size: 1.8rem; line-height: 1; }
 	.summary-card span { display: block; margin-top: 5px; color: var(--muted); font-size: 0.75rem; }
 	.recap-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin: 30px 0 14px; }
 	.filter-control { display: grid; gap: 6px; min-width: 220px; font-size: 0.8rem; font-weight: 800; }
@@ -422,9 +419,9 @@
 	.table-heading h2 { margin: 0; font-size: 1.08rem; }
 	.table-heading p { margin: 4px 0 0; color: var(--muted); font-size: 0.84rem; }
 	.table-count { flex: 0 0 auto; padding: 4px 8px; border-radius: 4px; background: var(--surface); color: var(--teal-dark); font-size: 0.76rem; font-weight: 800; }
-	.table-scroll { overflow-x: auto; }
+	.table-scroll { position: relative; max-width: 100%; overflow-x: auto; }
 	.recap-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 0.88rem; }
-	.recap-table th { padding: 12px 14px; background: var(--navy); color: #fff; font-size: 0.74rem; font-weight: 800; letter-spacing: 0.02em; text-align: left; white-space: nowrap; }
+	.recap-table th { padding: 12px 14px; background: var(--surface); color: var(--muted); font-size: 0.8rem; font-weight: 800; letter-spacing: 0.02em; text-align: left; white-space: nowrap; }
 	.recap-table td { padding: 13px 14px; border-bottom: 1px solid var(--rule); vertical-align: top; }
 	.recap-table tbody tr:last-child td { border-bottom: 0; }
 	.recap-table tbody tr:hover { background: #f5f9f8; }
@@ -450,7 +447,7 @@
 	.nik-value { display: inline-block; min-width: 15ch; font-variant-numeric: tabular-nums; letter-spacing: 0.06em; font-weight: 800; }
 	.nik-button { margin-left: 12px; min-height: 36px; font-size: 0.8rem; }
 	.nik-status { display: block; margin-top: 6px; color: var(--muted); font-size: 0.78rem; }
-	.reason-box { margin-top: 18px; padding: 14px 16px; border-left: 4px solid var(--navy); background: var(--surface); }
+	.reason-box { margin-top: 18px; padding: 14px 16px; border-left: 1px solid var(--navy); background: var(--surface); }
 	.reason-box strong { font-size: 0.84rem; }
 	.reason-box p { margin: 4px 0 0; color: var(--muted); }
 	.detail-note { margin: 18px 0 0; color: var(--muted); font-size: 0.82rem; }
@@ -463,7 +460,7 @@
 		.summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 	}
 
-	@media (max-width: 760px) {
+	@media (max-width: 1100px) {
 		.recap-page { padding: 24px 16px 56px; }
 		.gate-main,
 		.gate-side,
@@ -502,5 +499,13 @@
 		.summary-grid { grid-template-columns: 1fr; }
 		.summary-card { min-height: 108px; }
 		.nik-button { display: block; margin: 8px 0 0; }
+	}
+
+	.recap-toolbar { flex-wrap:wrap; align-items:end; gap:16px; }
+	.recap-search { display:grid; gap:8px; font-size:.85rem; font-weight:650; flex:1; min-width:180px; }
+	.recap-search input { min-height:46px; width:100%; padding:10px 12px; border:1px solid #97aab2; border-radius:8px; background:#fff; color:var(--ink); }
+	@media(max-width:1100px) {
+		.recap-toolbar { align-items:stretch; }
+		.recap-search { width:100%; min-width:0; flex:auto; }
 	}
 </style>

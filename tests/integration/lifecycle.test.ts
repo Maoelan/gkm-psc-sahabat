@@ -40,7 +40,7 @@ beforeAll(async () => {
 	const url = new URL(originalUrl); url.searchParams.set('options', `-c search_path=${schema}`);
 	process.env.DATABASE_URL = url.toString();
 	({ db } = await import('../../src/lib/server/db'));
-	for (const migration of ['001_initial.sql', '002_chat_transcript.sql', '003_staff_handoff.sql']) await db.query(await readFile(new URL(`../../db/${migration}`, import.meta.url), 'utf8'));
+	for (const migration of ['001_initial.sql', '002_chat_transcript.sql', '003_staff_handoff.sql', '004_staff_assistance.sql']) await db.query(await readFile(new URL(`../../db/${migration}`, import.meta.url), 'utf8'));
 	reports = await import('../../src/lib/server/reports');
 	sessions = await import('../../src/lib/server/session');
 	handoffs = await import('../../src/lib/server/handoffs');
@@ -58,6 +58,76 @@ afterAll(async () => {
 });
 
 describe('lifecycle database', () => {
+	it.runIf(process.env.TEST_LIVE_AI === 'true')('NVIDIA pendamping membaca kutipan sintetis', async () => {
+		const { makeStaffAssistance } = await import('../../src/lib/server/assistance-ai');
+		const result = await makeStaffAssistance([{ id: randomUUID(), source: 'user', sender: 'user', body: 'Kejadian itu berlangsung kemarin sore di rumah. Saya ingin pendampingan petugas.', createdAt: new Date().toISOString() }]);
+		expect(result.source).toBe('nvidia');
+		expect(result.fields.incidentTime.status).toBe('found');
+		expect(result.fields.incidentLocation.quote).toContain('rumah');
+		expect(result.fields.need.quote).toContain('pendampingan');
+	}, 25_000);
+	it('panduan petugas membatasi akses, tidak menambah balasan, dan mengenkripsi hasil', async () => {
+		vi.stubEnv('AI_ENABLED', 'false');
+		const { session } = await reporter(); await userMessage(session.id);
+		const { handoff } = await handoffs.takeoverChatSession(staff, session.id);
+		await expect(handoffs.getStaffChatAssistance({ ...staff, staffId: randomUUID(), roles: ['petugas'] }, handoff.id)).rejects.toMatchObject({ status: 403 });
+		const before = await handoffs.getStaffChatThread(staff, handoff.id);
+		const assistance = await handoffs.getStaffChatAssistance(staff, handoff.id);
+		expect(assistance.fields.story.quote).toBe('Cerita sintetis di rumah.');
+		expect((await handoffs.getStaffChatThread(staff, handoff.id)).messages).toHaveLength(before.messages.length);
+		const cached = await handoffs.getStaffChatAssistance(staff, handoff.id);
+		expect(cached.updatedAt).toBe(assistance.updatedAt);
+		const stored = (await db.query('SELECT content_enc,content_iv,content_tag FROM chat_assistance WHERE session_id=$1', [session.id])).rows[0];
+		expect(stored.content_enc.toString()).not.toContain('Cerita sintetis');
+		expect(JSON.parse(crypto.decrypt(stored.content_enc, stored.content_iv, stored.content_tag, 'staff_assistance'))).toEqual(assistance);
+	});
+	it('jawaban kepada petugas masuk ke isian pelapor meskipun ditutup sebelum AI selesai', async () => {
+		vi.stubEnv('AI_ENABLED', 'false');
+		const { session } = await reporter(); await userMessage(session.id);
+		const { handoff } = await handoffs.takeoverChatSession(staff, session.id);
+		await handoffs.sendStaffChatMessage(staff, handoff.id, 'Kapan kira-kira kejadian itu terjadi?');
+		await handoffs.sendReporterHandoffMessage(session, 'Kemarin sore');
+		await handoffs.closeStaffChat(staff, handoff.id);
+		expect((await handoffs.getReporterHandoff(session.id)).collectedFields?.incidentTime).toBe('Kemarin sore');
+		await expect(handoffs.getStaffChatAssistance(staff, handoff.id)).rejects.toMatchObject({ status: 409 });
+	});
+	it('jawaban terakhir tetap tersimpan saat pelapor mengakhiri bantuan dan AI masih berjalan', async () => {
+		vi.stubEnv('AI_ENABLED', 'false');
+		const { session } = await reporter(); await userMessage(session.id);
+		const { handoff } = await handoffs.takeoverChatSession(staff, session.id);
+		await handoffs.getStaffChatAssistance(staff, handoff.id);
+		await handoffs.sendStaffChatMessage(staff, handoff.id, 'Kapan kira-kira kejadian itu terjadi?');
+		await handoffs.sendReporterHandoffMessage(session, 'Kemarin sore');
+		let release!: (value: Response) => void; let started!: () => void;
+		const pending = new Promise<void>((resolve) => { started = resolve; });
+		vi.stubEnv('AI_ENABLED', 'true'); vi.stubEnv('NVIDIA_API_KEY', 'test-key');
+		vi.stubGlobal('fetch', vi.fn(() => { started(); return new Promise<Response>((resolve) => { release = resolve; }); }));
+		const result = handoffs.getStaffChatAssistance(staff, handoff.id);
+		const assertion = expect(result).rejects.toMatchObject({ code: 'handoff_not_active' });
+		await pending;
+		await handoffs.cancelReporterHandoff(session);
+		expect((await handoffs.getReporterHandoff(session.id)).collectedFields?.incidentTime).toBe('Kemarin sore');
+		release(Response.json({ choices: [{ message: { content: '{"fields":{}}' } }] }));
+		await assertion;
+		expect((await handoffs.getReporterHandoff(session.id)).collectedFields?.incidentTime).toBe('Kemarin sore');
+	});
+	it('hasil AI lama ditolak bila ada pesan baru dan tidak membocorkan pola identitas ke provider', async () => {
+		const { session } = await reporter(); await userMessage(session.id);
+		const { handoff } = await handoffs.takeoverChatSession(staff, session.id);
+		await handoffs.sendReporterHandoffMessage(session, 'Nama saya Ayu Lestari. NIK 0000000000000001.');
+		let release!: (value: Response) => void; let started!: () => void;
+		const pending = new Promise<void>((resolve) => { started = resolve; });
+		vi.stubEnv('AI_ENABLED', 'true'); vi.stubEnv('NVIDIA_API_KEY', 'test-key');
+		const provider = vi.fn((_url: string, options: RequestInit) => { expect(options.body as string).not.toMatch(/0000000000000001|Ayu Lestari/); started(); return new Promise<Response>((resolve) => { release = resolve; }); });
+		vi.stubGlobal('fetch', provider);
+		const result = handoffs.getStaffChatAssistance(staff, handoff.id);
+		const assertion = expect(result).rejects.toMatchObject({ code: 'assistance_stale' });
+		await pending;
+		await handoffs.sendReporterHandoffMessage(session, 'Ada keterangan tambahan setelah panduan mulai dibuat.');
+		release(Response.json({ choices: [{ message: { content: '{"fields":{}}' } }] }));
+		await assertion;
+		expect((await db.query('SELECT 1 FROM chat_assistance WHERE session_id=$1', [session.id])).rowCount).toBe(0);
+	});
 	it('menolak pembacaan identitas dan ekspor oleh akun tanpa admin', async () => {
 		const { session } = await reporter();
 		const draft = await reports.createDraft(session.id, content);

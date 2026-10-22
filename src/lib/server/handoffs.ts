@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { db, transaction } from './db';
 import { decrypt, encrypt } from './crypto';
@@ -16,6 +16,8 @@ import type {
 } from '../handoff';
 import type { ReporterSession } from './session';
 import type { StaffSession } from './staff-auth';
+import { collectedChatFields, type StaffAssistance } from '../assistance';
+import { finalizeStaffAssistance, makeStaffAssistance } from './assistance-ai';
 
 type Queryable = Pick<PoolClient, 'query'>;
 
@@ -250,8 +252,8 @@ function assertThreadAvailable(row: StaffHandoffRow) {
 	}
 }
 
-async function sessionMessages(sessionId: string, after?: string | null) {
-	const result = await db.query<MessageRow>(
+async function sessionMessages(sessionId: string, after?: string | null, client: Queryable = db) {
+	const result = await client.query<MessageRow>(
 		`SELECT m.id, m.sender_type, m.source, m.body_enc, m.body_iv, m.body_tag, m.created_at
 		 FROM chat_messages m
 		 WHERE m.session_id = $1
@@ -392,9 +394,11 @@ export async function getReporterHandoff(sessionId: string, after?: string | nul
 		return { handoff: null, messages: [], latestMessageId: null };
 	}
 	const messages = await handoffMessages(sessionId, row.id, after);
+	const assistance = await readAssistance(sessionId);
 	return {
 		handoff: mapHandoff(row),
 		messages,
+		collectedFields: assistance ? collectedChatFields(assistance.assistance) : {},
 		latestMessageId: messages.at(-1)?.id ?? after ?? null
 	};
 }
@@ -435,6 +439,7 @@ export async function cancelReporterHandoff(session: ReporterSession, requestId?
 		if (!handoff) {
 			throw new HandoffServiceError(409, 'handoff_not_open', 'Tidak ada bantuan petugas yang aktif.');
 		}
+		await finalizeConversationAssistance(client, session.id);
 		const updated = await client.query<HandoffRow>(
 			`UPDATE chat_handoffs
 			 SET status = 'cancelled', closed_at = now(), close_reason = 'reporter_cancelled'
@@ -659,7 +664,7 @@ export async function takeoverChatSession(
 				handoffId: existing.id,
 				sender: 'service',
 				source: 'handoff',
-				body: 'Petugas sudah bergabung. AI dijeda sampai percakapan dengan petugas selesai.'
+				body: 'Petugas sudah bergabung. Balasan otomatis AI dijeda. AI dapat membantu petugas meninjau keterangan Anda.'
 			});
 			await recordAudit(
 				{
@@ -698,7 +703,7 @@ export async function takeoverChatSession(
 			handoffId,
 			sender: 'service',
 			source: 'handoff',
-			body: 'Petugas sudah bergabung. AI dijeda sampai percakapan dengan petugas selesai.'
+			body: 'Petugas sudah bergabung. Balasan otomatis AI dijeda. AI dapat membantu petugas meninjau keterangan Anda.'
 		});
 		await recordAudit(
 			{
@@ -760,7 +765,7 @@ export async function claimStaffChat(
 			handoffId,
 			sender: 'service',
 			source: 'handoff',
-			body: 'Petugas sudah bergabung. AI dijeda sampai percakapan dengan petugas selesai.'
+			body: 'Petugas sudah bergabung. Balasan otomatis AI dijeda. AI dapat membantu petugas meninjau keterangan Anda.'
 		});
 		await recordAudit(
 			{
@@ -868,6 +873,7 @@ export async function closeStaffChat(
 		if (row.status !== 'active') {
 			throw new HandoffServiceError(409, 'handoff_not_active', 'Percakapan ini tidak aktif.');
 		}
+		await finalizeConversationAssistance(client, row.session_id);
 		const updated = await client.query<HandoffRow>(
 			`UPDATE chat_handoffs
 			 SET status = 'closed', closed_by = $2, closed_at = now(), close_reason = 'staff_closed'
@@ -899,4 +905,66 @@ export async function closeStaffChat(
 			latestMessageId: message.id
 		};
 	});
+}
+
+async function readAssistance(sessionId: string, client: Queryable = db) {
+	const result = await client.query<{ fingerprint: string; content_enc: Buffer; content_iv: Buffer; content_tag: Buffer }>(
+		'SELECT fingerprint, content_enc, content_iv, content_tag FROM chat_assistance WHERE session_id = $1', [sessionId]
+	);
+	const row = result.rows[0];
+	if (!row) return null;
+	return { fingerprint: row.fingerprint, assistance: JSON.parse(decrypt(row.content_enc, row.content_iv, row.content_tag, 'staff_assistance')) as StaffAssistance };
+}
+
+function assistanceFingerprint(messages: HandoffThreadMessage[]) {
+	return createHash('sha256').update(JSON.stringify(messages.filter((message) => message.source !== 'handoff').map(({ id, source, body }) => ({ id, source, body })))).digest('hex');
+}
+
+const assistanceInFlight = new Map<string, Promise<StaffAssistance>>();
+
+async function saveAssistance(client: Queryable, sessionId: string, fingerprint: string, assistance: StaffAssistance) {
+	const content = encrypt(assistance, 'staff_assistance');
+	await client.query(`INSERT INTO chat_assistance (session_id, fingerprint, content_enc, content_iv, content_tag)
+		VALUES ($1,$2,$3,$4,$5) ON CONFLICT (session_id) DO UPDATE SET fingerprint = EXCLUDED.fingerprint,
+		content_enc = EXCLUDED.content_enc, content_iv = EXCLUDED.content_iv, content_tag = EXCLUDED.content_tag, updated_at = now()`,
+		[sessionId, fingerprint, content.encrypted, content.iv, content.tag]);
+}
+
+async function finalizeConversationAssistance(client: Queryable, sessionId: string) {
+	const history = await sessionMessages(sessionId, null, client);
+	const previous = await readAssistance(sessionId, client);
+	const fingerprint = assistanceFingerprint(history);
+	if (previous?.fingerprint !== fingerprint) {
+		await saveAssistance(client, sessionId, fingerprint, finalizeStaffAssistance(history, previous?.assistance));
+	}
+}
+
+export async function getStaffChatAssistance(staff: StaffSession, handoffId: string, requestId?: string | null, refresh = false) {
+	const row = await loadStaffHandoff(db, handoffId);
+	assertStaffCanAccess(staff, row);
+	if (row.status !== 'active') throw new HandoffServiceError(409, 'handoff_not_active', 'Ambil percakapan aktif sebelum membuka panduan.');
+	const messages = await sessionMessages(row.session_id);
+	const fingerprint = assistanceFingerprint(messages);
+	await recordAudit({ actorType: 'staff', actorId: staff.staffId, action: 'staff.chat.assistance_viewed', objectType: 'chat_handoff', objectId: handoffId, requestId });
+	const cached = await readAssistance(row.session_id);
+	if (!refresh && cached?.fingerprint === fingerprint) return cached.assistance;
+	const key = `${handoffId}:${fingerprint}`;
+	const pending = assistanceInFlight.get(key);
+	if (pending) return pending;
+	if (assistanceInFlight.size >= 64) throw new HandoffServiceError(429, 'assistance_busy', 'Panduan sedang sibuk. Coba lagi sebentar.');
+	const work = (async () => {
+		const assistance = await makeStaffAssistance(messages, cached?.assistance);
+		return transaction(async (client) => {
+			const current = await loadStaffHandoff(client, handoffId, true);
+			assertStaffCanAccess(staff, current);
+			if (current.status !== 'active') throw new HandoffServiceError(409, 'handoff_not_active', 'Percakapan sudah ditutup.');
+			if (assistanceFingerprint(await sessionMessages(row.session_id, null, client)) !== fingerprint) {
+				throw new HandoffServiceError(409, 'assistance_stale', 'Ada pesan baru. Panduan akan diperbarui.');
+			}
+			await saveAssistance(client, row.session_id, fingerprint, assistance);
+			return assistance;
+		});
+	})();
+	assistanceInFlight.set(key, work);
+	try { return await work; } finally { assistanceInFlight.delete(key); }
 }

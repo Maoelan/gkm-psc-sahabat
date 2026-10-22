@@ -4,36 +4,22 @@
 	import '../app.css';
 
 	let { children, data }: LayoutProps = $props();
-	let menuOpen = $state(false);
-	let menuButton = $state<HTMLButtonElement>();
-	let closeButton = $state<HTMLButtonElement>();
-
+	let menuDialog: HTMLDialogElement;
+	const staffArea = $derived(Boolean(data.staff) && (/^\/(petugas|admin)(\/|$)/.test(page.url.pathname) || page.url.pathname === '/rekap'));
 	const publicLinks = [
-		{ href: '/panduan', label: 'Panduan & Edukasi' },
-		{ href: '/chat', label: 'Chat Pengaduan' }
+		{ href: '/', label: 'Beranda' },
+		{ href: '/panduan', label: 'Panduan melapor' },
+		{ href: '/chat', label: 'Buat laporan' }
 	];
-	const staffHome = $derived(
-		data.staff?.roles.includes('admin')
-			? '/rekap'
-			: '/petugas'
-	);
-	const recapHref = $derived(
-		data.staff?.roles.includes('admin')
-			? '/rekap'
-			: data.staff
-				? '/petugas/ganti-akun'
-				: '/rekap'
-	);
-
-	function openMenu() {
-		menuOpen = true;
-		requestAnimationFrame(() => closeButton?.focus());
-	}
-
-	function closeMenu(returnFocus = false) {
-		menuOpen = false;
-		if (returnFocus) requestAnimationFrame(() => menuButton?.focus());
-	}
+	const staffLinks = $derived([
+		{ href: '/petugas', label: 'Laporan masuk', help: 'Periksa dan catat keputusan' },
+		{ href: '/petugas/percakapan', label: 'Percakapan langsung', help: 'Bantu pelapor yang sedang menulis' },
+		...(data.staff?.roles.includes('admin') ? [
+			{ href: '/rekap', label: 'Rekap laporan', help: 'Lihat hasil dan unduh rekap' },
+			{ href: '/admin/nik', label: 'Data NIK', help: 'Identitas untuk tindak lanjut' }
+		] : [])
+	]);
+	const links = $derived(staffArea ? staffLinks : publicLinks);
 
 	function quickExit() {
 		try { sessionStorage.clear(); } catch { /* Browser storage may be disabled. */ }
@@ -48,9 +34,6 @@
 		window.location.replace('https://www.google.com');
 	}
 
-	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape' && menuOpen) closeMenu(true);
-	}
 </script>
 
 <svelte:head>
@@ -62,139 +45,33 @@
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
-<svelte:window onkeydown={handleKeydown} />
-
-<div class="app-frame">
+<div class="app-frame" class:staff-frame={staffArea}>
 	<a class="skip-link" href="#main-content">Lewati ke isi utama</a>
 	<header class="topbar">
 		<div class="topbar-inner">
-			<a class="wordmark" href="/" aria-label="LAPOR AMAN, kembali ke beranda">
-				<img src="/brand/puskesmas-logo.png" alt="" width="44" height="48" />
+			<a class="wordmark" href={staffArea ? '/petugas' : '/'} aria-label="LAPOR AMAN, beranda">
+				<img src="/brand/puskesmas-logo.png" alt="" width="40" height="44" />
 				<span><strong>LAPOR AMAN</strong><small>UPT Puskesmas Suranadi</small></span>
 			</a>
-
-			<button
-				bind:this={menuButton}
-				class="menu-toggle"
-				type="button"
-				aria-expanded={menuOpen}
-				aria-controls="mobile-navigation"
-				onclick={openMenu}
-			>
-				<span aria-hidden="true"></span>
-				<span class="sr-only">Buka menu</span>
-			</button>
-
-			<nav class="desktop-nav" aria-label="Navigasi utama">
-				{#each publicLinks as item}
-					<a href={item.href} aria-current={page.url.pathname === item.href ? 'page' : undefined}>
-						{item.label}
-					</a>
-				{/each}
-				{#if data.staff}
-					<a href={staffHome} aria-current={page.url.pathname === staffHome ? 'page' : undefined}>
-						Ruang kerja
-					</a>
-					{#if data.staff.roles.includes('petugas') || data.staff.roles.includes('admin')}
-						<a
-							href="/petugas/percakapan"
-							aria-current={page.url.pathname === '/petugas/percakapan' ? 'page' : undefined}
-						>
-							Percakapan
-						</a>
-					{/if}
-					{#if data.staff.roles.includes('admin')}
-						<a href="/petugas" aria-current={page.url.pathname === '/petugas' ? 'page' : undefined}>
-							Meja petugas
-						</a>
-						<a
-							href="/admin/nik"
-							aria-current={page.url.pathname === '/admin/nik' ? 'page' : undefined}
-						>
-							Data NIK
-						</a>
-					{/if}
-				{:else}
-					<a href="/masuk" aria-current={page.url.pathname === '/masuk' ? 'page' : undefined}>
-						Masuk petugas
-					</a>
-				{/if}
-			</nav>
-
-			<button class="quick-exit" type="button" onclick={quickExit}>Keluar cepat</button>
+			{#if staffArea}<span class="workspace-label">Ruang kerja petugas</span>
+			{:else}<nav class="desktop-nav" aria-label="Menu utama">{#each publicLinks as item}<a href={item.href} aria-current={page.url.pathname === item.href ? 'page' : undefined}>{item.label}</a>{/each}</nav>{/if}
+			<div class="header-actions">
+				{#if !staffArea}<a class="staff-entry" href={data.staff ? '/petugas' : '/masuk'}>{data.staff ? 'Ruang petugas' : 'Masuk petugas'}</a><button class="quick-exit" type="button" onclick={quickExit}>Keluar cepat</button>{/if}
+				<button class="menu-toggle" type="button" aria-label="Buka menu" onclick={() => menuDialog.showModal()}>Menu</button>
+			</div>
 		</div>
 	</header>
-
-	{#if menuOpen}
-		<button class="menu-backdrop" type="button" aria-label="Tutup menu" onclick={() => closeMenu(true)}></button>
-		<div id="mobile-navigation" class="mobile-nav" role="dialog" aria-modal="true" aria-label="Menu utama">
-			<div class="mobile-nav-heading">
-				<div><strong>Menu utama</strong><span>UPT Puskesmas Suranadi</span></div>
-				<button bind:this={closeButton} type="button" onclick={() => closeMenu(true)}>Tutup</button>
-			</div>
-			<nav aria-label="Navigasi seluler">
-				{#each publicLinks as item}
-					<a
-						href={item.href}
-						aria-current={page.url.pathname === item.href ? 'page' : undefined}
-						onclick={() => closeMenu()}>{item.label}</a
-					>
-				{/each}
-				{#if data.staff}
-					<a href={staffHome} onclick={() => closeMenu()}>Ruang kerja {data.staff.displayName}</a>
-					{#if data.staff.roles.includes('petugas') || data.staff.roles.includes('admin')}
-						<a href="/petugas/percakapan" onclick={() => closeMenu()}>Percakapan langsung</a>
-					{/if}
-					{#if data.staff.roles.includes('admin')}
-						<a href="/admin/nik" onclick={() => closeMenu()}>Data NIK lengkap</a>
-					{/if}
-					<form method="POST" action="/masuk?/logout">
-						<input type="hidden" name="csrfToken" value={data.staff.csrfToken} />
-						<button class="mobile-logout" type="submit">Keluar dari sesi petugas</button>
-					</form>
-				{:else}
-					<a href="/masuk" onclick={() => closeMenu()}>Masuk petugas</a>
-				{/if}
-				<a href="/petugas" onclick={() => closeMenu()}>Meja petugas</a>
-				<a href={recapHref} onclick={() => closeMenu()}>Rekap laporan</a>
-			</nav>
-			<p>Keluar cepat mengakhiri sesi server bila memungkinkan, tetapi tidak menghapus riwayat browser atau jejak perangkat.</p>
-		</div>
-	{/if}
-
-	<div class="privacy-banner" role="status">
-		<div>
-			<strong>Privasi Anda penting.</strong> Jangan masukkan data orang lain tanpa izin. Cerita dengan
-			pola identitas yang jelas diredaksi dapat diproses oleh layanan AI NVIDIA untuk menyusun
-			tanggapan dan satu pertanyaan pelengkap. <a href="/panduan#privasi">Baca pemberitahuan privasi</a>.
-		</div>
-	</div>
-
-	<main id="main-content" tabindex="-1">
-		{@render children()}
-	</main>
-
-	<footer class="site-footer">
-		<div class="footer-inner">
-			<div class="footer-brand">
-				<img src="/brand/puskesmas-logo.png" alt="" width="46" height="50" loading="lazy" />
-				<div>
-					<strong>LAPOR AMAN</strong>
-					<p>GKM PSC SAHABAT, UPT Puskesmas Suranadi.</p>
-				</div>
-			</div>
-			<div class="footer-links">
-				<a href="/panduan#privasi">Pemberitahuan privasi</a>
-				{#if data.staff}
-					<a href={staffHome}>Ruang kerja</a>
-					<form method="POST" action="/masuk?/logout">
-						<input type="hidden" name="csrfToken" value={data.staff.csrfToken} />
-						<button type="submit">Keluar</button>
-					</form>
-				{:else}
-					<a href="/masuk">Masuk petugas</a>
-				{/if}
-			</div>
-		</div>
-	</footer>
+	<dialog class="navigation-dialog" bind:this={menuDialog} aria-labelledby="menu-title">
+		<div class="mobile-nav-heading"><h2 id="menu-title">{staffArea ? 'Ruang petugas' : 'Menu utama'}</h2><button class="button-secondary" type="button" onclick={() => menuDialog.close()}>Tutup</button></div>
+		<nav aria-label="Navigasi seluler">{#each links as item}<a href={item.href} aria-current={page.url.pathname === item.href ? 'page' : undefined} onclick={() => menuDialog.close()}>{item.label}</a>{/each}<a href={staffArea ? '/' : data.staff ? '/petugas' : '/masuk'} onclick={() => menuDialog.close()}>{staffArea ? 'Buka portal publik' : data.staff ? 'Ruang petugas' : 'Masuk petugas'}</a></nav>
+		{#if data.staff}<form method="POST" action="/masuk?/logout"><input type="hidden" name="csrfToken" value={data.staff.csrfToken} /><button class="button-secondary" type="submit">Keluar akun petugas</button></form>{/if}
+	</dialog>
+	{#if staffArea}
+		<aside class="workspace-nav" aria-label="Ruang kerja petugas">
+			<nav>{#each staffLinks as item}<a href={item.href} aria-current={page.url.pathname === item.href ? 'page' : undefined}><strong>{item.label}</strong><small>{item.help}</small></a>{/each}</nav>
+			<div class="workspace-account"><strong>{data.staff?.displayName}</strong><span>Petugas layanan</span><a href="/">Buka portal publik</a><form method="POST" action="/masuk?/logout"><input type="hidden" name="csrfToken" value={data.staff?.csrfToken} /><button type="submit">Keluar akun</button></form></div>
+		</aside>
+	{:else}<div class="privacy-banner"><p>Gunakan perangkat yang aman. Cerita dapat diproses asisten AI NVIDIA. <a href="/panduan#privasi">Pelajari privasi Anda</a></p></div>{/if}
+	<main id="main-content" tabindex="-1">{@render children()}</main>
+	{#if !staffArea}<footer class="site-footer"><div class="footer-inner"><div><strong>LAPOR AMAN</strong><p>GKM PSC SAHABAT · UPT Puskesmas Suranadi</p></div><div class="footer-links"><a href="/panduan#privasi">Pemberitahuan privasi</a><a href="/masuk">Masuk petugas</a></div></div></footer>{/if}
 </div>

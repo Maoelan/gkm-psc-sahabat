@@ -2,6 +2,10 @@
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
+	let showPassword = $state(false);
+	// svelte-ignore state_referenced_locally
+	let username = $state(form?.username ?? '');
+	let password = $state('');
 </script>
 
 <svelte:head>
@@ -11,8 +15,7 @@
 <div class="login-page">
 	<section class="login-card" aria-labelledby="login-title">
 		<div class="login-main">
-			<p class="step-kicker">Akses petugas</p> <!-- taste-skill-ignore: label akses -->
-			<h1 id="login-title">Masuk ruang kerja</h1>
+			<h1 id="login-title">Masuk petugas</h1>
 			<p class="login-lead">
 				Gunakan akun petugas yang terdaftar. Jangan bagikan kata sandi atau tautan sesi kepada orang
 				lain.
@@ -56,7 +59,7 @@
 						autocomplete="username"
 						required
 						maxlength="80"
-						value={form?.username ?? ''}
+						bind:value={username}
 					/>
 				</div>
 				<div class="field">
@@ -64,12 +67,14 @@
 					<input
 						id="password"
 						name="password"
-						type="password"
+						type={showPassword ? 'text' : 'password'}
+						bind:value={password}
 						autocomplete="current-password"
 						required
 						maxlength="200"
 					/>
 				</div>
+				<label class="password-toggle"><input type="checkbox" bind:checked={showPassword} /> Tampilkan kata sandi</label>
 				<button class="button-primary login-button" type="submit">Masuk</button>
 			</form>
 
@@ -79,19 +84,10 @@
 			<a class="back-link" href="/">Kembali ke portal publik</a>
 		</div>
 
-		<aside class="login-side" aria-label="Batas akses">
-			<span class="login-mark" aria-hidden="true"></span>
-			<h2>Yang perlu diketahui</h2>
-			<ul>
-				<li>Sesi disimpan di server, bukan hanya di browser.</li>
-				<li>Meja petugas tidak menampilkan NIK di daftar laporan.</li>
-				<li>NIK lengkap ada di halaman khusus admin dan setiap akses diaudit.</li>
-				<li>Export dibuat di server dan tetap menyertakan data laporan.</li>
-			</ul>
-			<p class="side-note">
-				Akses memakai sesi server dan peran akun. Jangan membagikan kredensial atau membiarkan
-				perangkat petugas tanpa pengawasan.
-			</p>
+		<aside class="login-side" aria-label="Panduan ruang kerja">
+			<h2>Mulai dari pekerjaan Anda</h2>
+			<ol class="login-jobs"><li><strong>Laporan masuk</strong><p>Baca cerita pelapor, catat pemeriksaan, lalu simpan keputusan.</p></li><li><strong>Percakapan langsung</strong><p>Bantu pelapor yang sedang menyiapkan laporan.</p></li><li><strong>Rekap dan identitas</strong><p>Buka hasil pemeriksaan atau data NIK sesuai akses akun Anda.</p></li></ol>
+			<p class="side-note">Gunakan perangkat kerja. Keluar dari akun setelah selesai, terutama jika perangkat digunakan bersama.</p>
 		</aside>
 	</section>
 </div>
@@ -114,14 +110,7 @@
 		background: #fff;
 	}
 	.login-main { padding: 38px; }
-	.step-kicker {
-		margin: 0 0 8px;
-		color: var(--teal-dark);
-		font-size: 0.76rem;
-		font-weight: 800;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
-	}
+
 	h1 {
 		margin: 0;
 		font-family: var(--font-display);
@@ -133,7 +122,7 @@
 	.login-notice {
 		margin-top: 22px;
 		padding: 15px 17px;
-		border-left: 4px solid #d4a72c;
+		border-left: 1px solid #d4a72c;
 		background: var(--attention);
 		color: #493a0b;
 		font-size: 0.9rem;
@@ -142,14 +131,14 @@
 	.login-switch-note {
 		margin-top: 22px;
 		padding: 15px 17px;
-		border-left: 4px solid var(--teal);
+		border-left: 1px solid var(--teal);
 		background: var(--surface-teal);
 		color: #214f4e;
 		font-size: 0.9rem;
 	}
 	.login-switch-note p { margin: 4px 0 0; }
 	.login-form { display: grid; gap: 16px; margin-top: 24px; }
-	.field { display: grid; gap: 7px; }
+	.field { display: grid; gap: 7px; margin-top: 0; }
 	.field label { font-size: 0.9rem; font-weight: 800; }
 	.field input {
 		width: 100%;
@@ -183,24 +172,9 @@
 		border-left: 1px solid var(--border);
 		background: var(--surface-teal);
 	}
-	.login-mark {
-		display: block;
-		width: 42px;
-		height: 42px;
-		margin-bottom: 22px;
-		border: 3px solid var(--teal);
-		border-radius: 50%;
-		position: relative;
-	}
-	.login-mark::after {
-		content: '';
-		position: absolute;
-		inset: 12px;
-		border-radius: 50%;
-		background: var(--teal);
-	}
+
 	.login-side h2 { margin: 0; font-family: var(--font-display); font-size: 1.45rem; line-height: 1.15; }
-	.login-side ul { display: grid; gap: 9px; margin: 16px 0 0; padding-left: 20px; color: #355d62; }
+
 	.side-note {
 		margin: 22px 0 0;
 		padding-top: 14px;
@@ -216,4 +190,15 @@
 		.login-page { padding: 24px 16px 56px; }
 		.login-main, .login-side { padding: 24px 20px; }
 	}
+
+	.login-page { min-height:calc(100svh - 190px); }
+	.login-card { border-top-width:1px; border-radius:16px; overflow:clip; }
+	.login-main h1 { font-size:1.8rem; }
+	.login-side { background:var(--surface); }
+	.login-side h2 { font-size:1.2rem; }
+	.login-jobs { display:grid; gap:24px; padding-left:20px; margin-top:28px; }
+	.login-jobs li { padding-left:8px; }
+	.login-jobs p { margin:6px 0 0; color:var(--muted); font-size:.9rem; }
+	.password-toggle { display:flex; align-items:center; gap:10px; min-height:44px; font-size:.9rem; }
+	.password-toggle input { width:18px; height:18px; accent-color:var(--teal); }
 </style>

@@ -68,7 +68,7 @@ export function handoffStatusCopy(status: HandoffStatus) {
 		return 'Permintaan Anda sudah masuk. Anda tetap bisa menulis; pesan akan dibaca petugas saat bergabung.';
 	}
 	if (status === 'active') {
-		return 'Petugas sudah bergabung. AI dijeda sampai percakapan dengan petugas selesai.';
+		return 'Petugas sudah bergabung. Balasan otomatis AI dijeda. AI dapat membantu petugas meninjau keterangan Anda.';
 	}
 	if (status === 'cancelled') {
 		return 'Bantuan petugas diakhiri. Anda bisa melanjutkan percakapan atau meminta bantuan lagi.';
