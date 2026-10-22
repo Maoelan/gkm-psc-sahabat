@@ -66,6 +66,7 @@ try:
         stage = 'takeover and editable private guidance'
         page.locator('.active-row').filter(has_text=marker).click()
         panel = page.get_by_role('complementary', name='Panduan petugas')
+        panel.get_by_text('Bantu susun pertanyaan', exact=True).click()
         use = panel.get_by_role('button', name='Gunakan pertanyaan', exact=True)
         expect(use).to_be_enabled()
         sent = []
@@ -117,6 +118,7 @@ try:
         page.screenshot(path=str(output / 'evaluation-recap-desktop.png'), full_page=True)
         stage = 'confirmed deletion of this smoke test record only'
         page.get_by_role('button', name='Lihat detail', exact=True).click()
+        page.get_by_text('Tindakan laporan', exact=True).click()
         page.get_by_role('button', name='Hapus laporan', exact=True).click()
         deletion = page.get_by_role('dialog', name='Hapus laporan ini?')
         expect(deletion.get_by_role('button', name='Hapus permanen')).to_be_disabled()

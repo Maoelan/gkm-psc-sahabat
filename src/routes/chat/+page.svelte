@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { keepComposerVisible } from '../../lib/keep-composer-visible';
 	import { dev } from '$app/env';
 	import { onMount, tick } from 'svelte';
 	import { hasContactNumber } from '../../lib/contact';
@@ -67,7 +68,9 @@
 	let relation = $state('');
 	let victimName = $state('');
 	let victimProfile = $state(emptyVictimProfile());
+	let victimReviewDetails = $state<HTMLDetailsElement>();
 	let victimNik = $state('');
+	let chatToolsOpen = $state(false);
 	let story = $state('');
 	let incidentTime = $state('');
 	let incidentLocation = $state('');
@@ -86,6 +89,7 @@
 
 	let chatLog = $state<HTMLDivElement>();
 	let composer = $state<HTMLTextAreaElement>();
+	onMount(() => keepComposerVisible(() => composer));
 	let startHeading = $state<HTMLHeadingElement>();
 	let identityHeading = $state<HTMLHeadingElement>();
 	let safetyHeading = $state<HTMLHeadingElement>();
@@ -94,9 +98,7 @@
 	let receiptHeading = $state<HTMLHeadingElement>();
 	let privacyCheckbox = $state<HTMLInputElement>();
 	let firstRelation = $state<HTMLInputElement>();
-	let nameInput = $state<HTMLInputElement>();
 	let nameReviewInput = $state<HTMLInputElement>();
-	let nikInput = $state<HTMLInputElement>();
 	let nikReviewInput = $state<HTMLInputElement>();
 	let nikEditing = $state(false);
 	let contactNo = $state<HTMLInputElement>();
@@ -648,20 +650,6 @@
 			firstRelation?.focus();
 			return;
 		}
-		const name = victimName.trim();
-		if (name && name.length < 2) {
-			identityError = 'Tulis nama korban atau nama panggilan sedikitnya 2 karakter.';
-			nameInput?.focus();
-			return;
-		}
-		const nik = normalizeNik(victimNik);
-		if (!isValidNik(nik)) {
-			identityError = 'NIK harus 16 digit angka. Kosongkan jika belum ingin mengisi.';
-			nikInput?.focus();
-			return;
-		}
-		victimName = name;
-		victimNik = nik;
 		if (!(await ensureSession())) return;
 		nextMessageId = 1;
 		messages = [];
@@ -677,7 +665,7 @@
 		const intro =
 			serviceMode === 'unavailable'
 				? 'Halo. Petugas tidak tersedia, jadi kita susun draf bersama. Ceritakan yang ingin Anda sampaikan dengan kata-kata sendiri; saya akan menanyakan satu bagian pelengkap setiap giliran.'
-				: 'Halo. Saya menemani percakapan ini. Ceritakan yang ingin Anda sampaikan dengan kata-kata sendiri; saya bisa menanggapi pertanyaan soal alur dan akan menanyakan satu bagian pelengkap setiap giliran. Boleh belum lengkap, dan Anda bisa melewati bagian yang belum nyaman dijawab.';
+				: 'Ceritakan apa yang terjadi, sejauh yang nyaman Anda sampaikan. Saya membantu melengkapi waktu, lokasi umum, dan kebutuhan. Bagian yang belum diketahui boleh dilewati.';
 		await addMessage('assistant', intro, 'guide');
 		await focusComposer();
 	}
@@ -783,6 +771,8 @@
 		const name = victimName.trim();
 		if (name && name.length < 2) {
 			submitError = 'Tulis nama korban atau nama panggilan sedikitnya 2 karakter.';
+			if (victimReviewDetails) victimReviewDetails.open = true;
+			await tick();
 			nameReviewInput?.focus();
 			return;
 		}
@@ -790,6 +780,7 @@
 		if (!isValidNik(nik)) {
 			submitError = 'NIK harus 16 digit angka. Kosongkan jika belum ingin mengisi.';
 			nikEditing = true;
+			if (victimReviewDetails) victimReviewDetails.open = true;
 			await tick();
 			nikReviewInput?.focus();
 			return;
@@ -933,28 +924,21 @@
 			</p>
 			<p class="copy-status" role="status">{copyStatus}</p>
 			<div class="receipt-actions">
-				<button class="button-secondary" type="button" onclick={copyReference}>Salin kode laporan</button>
-				<button class="button-primary" type="button" onclick={reset}>Buat laporan baru</button>
+				<button class="button-primary" type="button" onclick={copyReference}>Salin kode laporan</button>
+				<button class="button-secondary" type="button" onclick={reset}>Buat laporan baru</button>
 				<a class="button-secondary" href="/">Kembali ke beranda</a>
 			</div>
 		</section>
 	{:else}
 		<header class="chat-page-heading">
-			<h1 tabindex="-1" bind:this={startHeading}>Buat laporan</h1>
+			<h1 tabindex="-1" bind:this={startHeading}>{stage === 'chat' ? 'Ceritakan kejadian' : stage === 'review' ? 'Periksa laporan' : 'Buat laporan'}</h1>
 			<a class="page-back" href="/">Kembali ke beranda</a>
 		</header>
 
-		{#if stage !== 'start'}
-			<ol class="report-steps" aria-label="Tahapan laporan">
-				<li class:current={stage === 'identity'} class:complete={stage !== 'identity'} aria-current={stage === 'identity' ? 'step' : undefined}><span>1</span> Data korban</li>
-				<li class:current={stage === 'chat'} class:complete={stage === 'review'} aria-current={stage === 'chat' ? 'step' : undefined}><span>2</span> Cerita kejadian</li>
-				<li class:current={stage === 'review'} aria-current={stage === 'review' ? 'step' : undefined}><span>3</span> Periksa & kirim</li>
-			</ol>
-		{/if}
 		{#if stage === 'start'}
 			<section class="start-card" aria-labelledby="start-title">
 				<h2 id="start-title">Sebelum mulai</h2>
-				<p class="start-intro">Anda akan menulis cerita, memeriksa isinya, lalu mengirim laporan kepada petugas. Tidak perlu membuat akun.</p>
+				<p class="start-intro">Tulis cerita, periksa, lalu kirim. Tidak perlu membuat akun.</p>
 				<p class="start-privacy">Pesan tersimpan saat dikirim. Cerita dapat diproses asisten AI NVIDIA; AI tidak menggantikan petugas. Hindari menulis NIK atau kontak di dalam cerita. <a href="/panduan#privasi" target="_blank" rel="noopener">Baca rincian privasi</a>.</p>
 
 				{#if safetyChoice !== 'unsafe'}
@@ -988,7 +972,7 @@
 					</div>
 				{/if}
 
-				<details class="service-details" open><summary>Siapa yang membantu saya?</summary>				<div
+				<details class="service-details"><summary>Siapa yang membantu saya?</summary>				<div
 					class="mode-panel"
 					class:mode-operator={serviceMode === 'operator'}
 					class:mode-unavailable={serviceMode === 'unavailable'}
@@ -1026,13 +1010,13 @@
 			</section>
 		{:else if stage === 'identity'}
 			<section class="identity-card" aria-labelledby="identity-title">
-				<h2 id="identity-title" tabindex="-1" bind:this={identityHeading}>Sedikit tentang korban</h2>
+				<h2 id="identity-title" tabindex="-1" bind:this={identityHeading}>Anda melapor untuk siapa?</h2>
 				<p class="identity-lead">
-					Data korban dianjurkan untuk membantu pemeriksaan, tetapi boleh dikosongkan jika belum diketahui atau belum aman untuk disampaikan. NIK tetap opsional.
+					Pilih hubungan Anda dengan korban. Nama dan data lainnya bisa dilengkapi setelah bercerita.
 				</p>
 
 				<fieldset class="relation-field">
-					<legend>Anda melapor untuk siapa?</legend>
+					<legend class="sr-only">Anda melapor untuk siapa?</legend>
 					<div class="relation-options">
 						<label class="choice-card">
 							<input
@@ -1066,44 +1050,6 @@
 					</div>
 				</fieldset>
 
-				<div class="field">
-					<label for="victim-name">Nama lengkap atau nama panggilan korban (opsional)</label>
-					<input
-						bind:this={nameInput}
-						id="victim-name"
-						maxlength="80"
-						autocomplete="off"
-						bind:value={victimName}
-						placeholder="Contoh: Rani"
-						aria-describedby="name-help"
-					/>
-					<p id="name-help" class="field-help">
-						Tulis nama korban, bukan nama pelapor. Boleh nama samaran.
-					</p>
-				</div>
-
-				<details class="optional-identity"><summary>Isi NIK korban (opsional)</summary><p class="field-help">Anda tetap dapat melapor tanpa mengisi NIK.</p>
-				<div class="field">
-					<label for="victim-nik">NIK korban <span class="optional-label">(opsional)</span></label>
-					<input
-						bind:this={nikInput}
-						id="victim-nik"
-						inputmode="numeric"
-						maxlength="16"
-						autocomplete="off"
-						bind:value={victimNik}
-						oninput={() => (victimNik = normalizeNik(victimNik))}
-						placeholder="16 digit, boleh dikosongkan"
-						aria-describedby="nik-help"
-					/>
-					<p id="nik-help" class="field-help">
-						Hanya akun berwenang yang dapat membuka NIK untuk tindak lanjut. Setiap pembukaan
-						dicatat dalam audit.
-					</p>
-				</div>
-				</details>
-
-				<VictimDetails bind:profile={victimProfile} {relation} prefix="initial" />
 				{#if identityError}<p class="form-error" role="alert">{identityError}</p>{/if}
 
 				<div class="identity-actions">
@@ -1116,66 +1062,19 @@
 		{/if}
 
 {#if stage === 'chat'}
-			<section class="chat-card chronology-chat" aria-label="Percakapan pengaduan">
+			<section class="chat-card chronology-chat" class:finished={chatStep === 'open' && !handoffOpen} aria-label="Percakapan pengaduan">
 				<header class="chat-card-bar">
 					<div>
 						<h2>Percakapan</h2>
-						<p>{handoff?.status === 'active' ? 'Petugas LAPOR AMAN' : modeLabel}</p>
+						<p>{handoff?.status === 'active' ? 'Petugas PSC SAHABAT' : aiEnabled ? 'Asisten AI' : 'Panduan pelaporan'}</p>
 					</div>
-					<div class="chat-bar-actions">
-						{#if !handoffOpen}
-							{#if handoffAvailable}
-								<button
-									class="bar-button handoff-trigger"
-									type="button"
-									onclick={requestHandoff}
-									disabled={handoffBusy || busy}
-								>
-									{handoffBusy ? 'Menghubungkan...' : 'Minta bantuan petugas'}
-								</button>
-							{:else}
-								<button
-									class="bar-button handoff-unavailable"
-									type="button"
-									disabled
-									title={`Bantuan petugas langsung tersedia ${SERVICE_HOURS_LABEL}.`}
-								>
-									Bantuan petugas
-								</button>
-							{/if}
-						{/if}
-						{#if isFieldStep && !handoffOpen}
-							<button
-								class="bar-button"
-								type="button"
-								title="Buka draf lebih awal"
-								onclick={openReview}>Lihat draf</button
-							>
-						{/if}
-						<a class="bar-button" href="/panduan#privasi" target="_blank" rel="noopener"
-							>Privasi</a
-						>
-					</div>
-				</header>
-
-				<div class="chat-progress" aria-label={`Tahap percakapan: ${progressLabel}`}>
-					<div class="progress-track" aria-hidden="true">
-						<span class:active={chatStep === 'story'} class:done={chatStep !== 'story'}></span>
-						<span class:active={isFieldStep} class:done={chatStep === 'open'}></span>
-						<span class:active={chatStep === 'open'}></span>
-					</div>
-					<p>{progressLabel}</p>
-				</div>
-
-				{#if !handoffOpen && !handoffAvailable}
-					<p class="handoff-hours">
-						<strong>Bantuan petugas langsung belum tersedia.</strong>
-						Jam layanan: {SERVICE_HOURS_LABEL}. Anda tetap dapat menyiapkan dan mengirim laporan.
-						{#if dev}
-							<a href="?mode=operator">Buka mode layanan petugas untuk pengujian.</a>
-						{/if}
-					</p>
-				{/if}
+                    <details class="chat-tools" bind:open={chatToolsOpen}><summary>Bantuan</summary><div>
+                        {#if !handoffOpen && handoffAvailable}<button type="button" class="button-secondary" onclick={() => { chatToolsOpen = false; void requestHandoff(); }} disabled={handoffBusy || busy}>{handoffBusy ? 'Menghubungkan…' : 'Minta bantuan petugas'}</button>{/if}
+                        <p>{handoffAvailable ? 'Petugas tersedia pada jam layanan, sesuai ketersediaan.' : 'Bantuan petugas langsung belum tersedia. Anda tetap bisa mengirim laporan.'}</p>
+                        <p>{SERVICE_HOURS_LABEL}</p><a href="/panduan#privasi" target="_blank" rel="noopener">Privasi dan cara kerja AI</a>
+                    </div></details>
+                </header>
+                <p class="sr-only" role="status">{progressLabel}</p>
 
 				{#if handoff || handoffError}
 					<div
@@ -1188,7 +1087,7 @@
 							<strong>{handoff ? handoffStatusLabel(handoff.status) : 'Bantuan petugas'}</strong>
 							<p>
 								{handoff
-									? handoffStatusCopy(handoff.status)
+									? (handoff.status === 'active' ? 'Anda sedang berbicara dengan petugas.' : handoffStatusCopy(handoff.status))
 									: handoffError || 'Permintaan bantuan belum dapat diproses.'}
 							</p>
 							{#if handoff && handoffError}
@@ -1243,12 +1142,6 @@
 				<div class="composer">
 					{#if chatStep === 'open' && !handoffOpen}
 						<div class="finish-bar">
-							<div class="finish-copy">
-								<strong>Sudah cukup?</strong>
-								<p>
-									Anda bisa terus menulis atau menyelesaikan percakapan untuk memeriksa draf.
-								</p>
-							</div>
 							<button
 								class="button-primary finish-button"
 								type="button"
@@ -1262,7 +1155,7 @@
 					{/if}
 
 					{#if !addingStory && isFieldStep && !handoffOpen}
-						<div class="quick-replies" aria-label="Pilihan cepat">
+						<details class="quick-answers"><summary>Pilihan jawaban cepat</summary><div class="quick-replies" aria-label="Pilihan cepat">
 							{#if chatStep === 'time'}
 								<button type="button" onclick={() => answerTime('Hari ini')}>Hari ini</button>
 								<button type="button" onclick={() => answerTime('Kemarin')}>Kemarin</button>
@@ -1299,7 +1192,7 @@
 									>Belum tahu</button
 								>
 							{/if}
-						</div>
+						</div></details>
 					{/if}
 
 					<form class="composer-form" onsubmit={handleComposerSubmit}>
@@ -1316,7 +1209,7 @@
 								aria-describedby="composer-help"
 							></textarea>
 							<button
-								class="button-primary send-button"
+								class="send-button" class:button-primary={chatStep !== 'open' || handoffOpen} class:button-secondary={chatStep === 'open' && !handoffOpen}
 								type="submit"
 								disabled={busy || handoffBusy}
 							>
@@ -1330,15 +1223,15 @@
 								{:else if addingStory}
 									Tambahan cerita akan masuk ke keterangan Anda.
 								{:else if chatStep === 'open'}
-									Percakapan tetap terbuka sampai Anda menekan Selesai. Keterangan tambahan ikut masuk ke draf yang dapat Anda periksa.
+									Tambahan cerita akan ikut masuk ke draf.
 								{:else}
-									Anda bisa bertanya soal alur kapan saja. Jangan masukkan data orang lain
-									tanpa izin.
+									Jangan tulis NIK atau nomor kontak di chat.
 								{/if}
 							</p>
-							{#if chatStep !== 'story' && !handoffOpen}
+							{#if isFieldStep && !handoffOpen}
 								<div class="composer-links">
-									<button class="link-button" type="button" onclick={toggleAddingStory}>
+									<button class="link-button" type="button" onclick={openReview}>Periksa draf</button>
+                                    <button class="link-button" type="button" onclick={toggleAddingStory}>
 										{addingStory ? 'Batal tambah cerita' : 'Tambah cerita'}
 									</button>
 									{#if !addingStory && isFieldStep}
@@ -1353,25 +1246,17 @@
 					</form>
 
 					<p class="help-line">
-						<strong>Butuh pertolongan segera?</strong> Hubungi layanan darurat atau orang tepercaya di
-						sekitar Anda.
+						Dalam bahaya? Hubungi layanan darurat atau orang tepercaya. <a href="/panduan#bantuan" target="_blank" rel="noopener">Panduan keselamatan</a>
 					</p>
 				</div>
 			</section>
-			<p class="chat-footnote">
-				Pesan Anda tersimpan. Laporan resmi masuk ke antrean petugas setelah Anda memeriksa draf dan menekan kirim.
-			</p>
 		{:else if stage === 'review'}
 			<section class="review-card" aria-labelledby="review-title">
 				<header class="review-header">
 					<div>
-						<h2 id="review-title" tabindex="-1" bind:this={reviewHeading}>Periksa draf Anda</h2>
-						<p>Baca kembali cerita dan data di bawah. Semua bagian masih bisa Anda ubah sebelum dikirim.</p>
-						<p class="review-mode">
-							{modeLabel}. Laporan akan masuk ke meja petugas setelah dikirim.
-						</p>
-					</div>
-					<span class="draft-chip">Belum dikirim</span>
+						<h2 class="sr-only" id="review-title" tabindex="-1" bind:this={reviewHeading}>Periksa draf Anda</h2>
+                        <p>Perbaiki isi jika perlu. Laporan belum dikirim.</p>
+                    </div>
 				</header>
 
 				<section class="review-section" aria-labelledby="story-review-title">
@@ -1386,7 +1271,36 @@
 				<section class="review-section" aria-labelledby="summary-review-title">
 					<h3 id="summary-review-title">Data laporan</h3>
 					<div class="review-grid">
-						<label class="field field-wide"
+						<label class="field"
+							>Hubungan dengan korban
+							<select bind:value={relation}>
+								<option value="Diri sendiri">Diri sendiri</option>
+								<option value="Keluarga atau pendamping">Keluarga atau pendamping</option>
+								<option value="Pihak lain yang mengetahui kejadian"
+									>Pihak lain yang mengetahui kejadian</option
+								>
+							</select>
+						</label>
+						<label class="field"
+							>Waktu kejadian
+							<input maxlength="160" bind:value={incidentTime} />
+						</label>
+						<label class="field"
+							>Lokasi umum
+							<input maxlength="200" bind:value={incidentLocation} />
+						</label>
+						<label class="field"
+							>Bantuan yang diharapkan
+							<input maxlength="300" bind:value={need} />
+						</label>
+					</div>
+					{#if unknownFields.length}<p class="field-help">Belum diketahui: {unknownFields.join(', ')}. Anda tetap boleh mengirim laporan.</p>{/if}
+				</section>
+
+				<details class="review-section victim-review" bind:this={victimReviewDetails}>
+                    <summary>Lengkapi data korban <span>Opsional</span></summary>
+                    <p>Isi yang diketahui untuk membantu pemeriksaan. Laporan tetap dapat dikirim tanpa data ini.</p>
+                    <div class="review-grid"><label class="field field-wide"
 							>Nama korban
 							<input
 								bind:this={nameReviewInput}
@@ -1423,50 +1337,11 @@
 								ditampilkan di daftar meja petugas.
 							</p>
 						</div>
-						<label class="field"
-							>Hubungan dengan korban
-							<select bind:value={relation}>
-								<option value="Diri sendiri">Diri sendiri</option>
-								<option value="Keluarga atau pendamping">Keluarga atau pendamping</option>
-								<option value="Pihak lain yang mengetahui kejadian"
-									>Pihak lain yang mengetahui kejadian</option
-								>
-							</select>
-						</label>
-						<label class="field"
-							>Waktu kejadian
-							<input maxlength="160" bind:value={incidentTime} />
-						</label>
-						<label class="field"
-							>Lokasi umum
-							<input maxlength="200" bind:value={incidentLocation} />
-						</label>
-						<label class="field"
-							>Bantuan yang diharapkan
-							<input maxlength="300" bind:value={need} />
-						</label>
-					</div>
-					<p class="field-help">
-						Kategori kejadian tidak ditetapkan otomatis. Petugas berwenang akan memeriksa laporan.
-					</p>
-				</section>
-
-				<section class="review-section" aria-labelledby="unknown-title">
-					<h3 id="unknown-title">Informasi yang belum diketahui</h3>
-					{#if unknownFields.length}
-						<ul class="unknown-list">
-							{#each unknownFields as item}<li>{item}</li>{/each}
-						</ul>
-						<p class="field-help">
-							Bagian ini boleh tetap kosong. Anda tidak perlu melengkapinya untuk mengirim.
-						</p>
-					{:else}
-						<p>Semua bagian utama sudah terisi.</p>
-					{/if}
-				</section>
+						</div>
+                    <VictimDetails bind:profile={victimProfile} {relation} prefix="review" embedded />
+                </details>
 
 				<section class="review-section contact-section" aria-labelledby="contact-title">
-					<VictimDetails bind:profile={victimProfile} {relation} prefix="review" />
 					<h3 id="contact-title">Apakah Anda bersedia dihubungi petugas?</h3>
 					<p>Petugas tidak akan menghubungi Anda tanpa izin. Pilih kondisi yang paling aman.</p>
 					<fieldset>
@@ -1517,7 +1392,7 @@
 
 				<section class="privacy-section" aria-labelledby="privacy-title">
 					<h3 id="privacy-title">Pemberitahuan privasi</h3>
-					<p>Cerita dan data Anda disimpan untuk pemeriksaan petugas. NIK tidak wajib. Asisten AI NVIDIA dapat memproses cerita setelah pola identitas yang jelas disamarkan; penyamaran tidak menjamin seluruh identitas terhapus.</p>
+					<p>Cerita dan data disimpan untuk pemeriksaan petugas. AI NVIDIA dapat memproses cerita; penyamaran identitas tidak menjamin anonimitas.</p>
 					<details class="privacy-details"><summary>Baca data yang diproses dan batas akses</summary>					<ul>
 						<li>Tujuan: menyiapkan dan memeriksa pengaduan.</li>
 						<li>Data: cerita, ringkasan, hubungan dengan korban, data korban opsional (termasuk tanggal lahir, alamat, orang tua, pendidikan, pekerjaan, status perkawinan, dan kehamilan), dugaan jenis kekerasan, koordinasi, serta izin dan kontak pelapor.</li>
@@ -1658,11 +1533,10 @@
 		color: var(--muted);
 		font-size: 0.78rem;
 	}
-	.dev-mode-link a,
-	.handoff-hours a {
-		color: var(--teal-dark);
-		font-weight: 800;
-	}
+.dev-mode-link a {
+	color: var(--teal-dark);
+	font-weight: 800;
+}
 
 	.safety-question { margin-top: 26px; }
 	.safety-question h3 {
@@ -1762,7 +1636,6 @@
 	}
 	.field textarea { min-height: 96px; resize: vertical; }
 	.field-help { margin: 0; color: var(--muted); font-size: 0.82rem; }
-	.optional-label { color: var(--muted); font-size: 0.86rem; font-weight: 600; }
 	.form-error { margin: 12px 0 0; color: var(--danger); font-weight: 800; }
 	.identity-actions {
 		display: flex;
@@ -1793,34 +1666,6 @@
 	}
 	.chat-card-bar h2 { margin: 0; font-size: 1rem; }
 	.chat-card-bar p { margin: 2px 0 0; color: #c6dfe4; font-size: 0.76rem; }
-	.chat-bar-actions { display: flex; align-items: center; gap: 14px; }
-	.bar-button {
-		min-height: 44px;
-		display: inline-flex;
-		align-items: center;
-		border: 0;
-		background: transparent;
-		color: #fff;
-		padding: 0 2px;
-		font-size: 0.84rem;
-		font-weight: 800;
-		text-decoration: underline;
-		text-underline-offset: 3px;
-	}
-	.bar-button:hover { color: var(--yellow); }
-	.chat-progress {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		padding: 10px 18px;
-		border-bottom: 1px solid var(--rule);
-		background: #f7faf9;
-	}
-	.progress-track { display: flex; flex: 0 0 120px; gap: 5px; }
-	.progress-track span { height: 5px; flex: 1; background: #dce5e7; }
-	.progress-track span.active { background: var(--magenta); }
-	.progress-track span.done { background: var(--teal); }
-	.chat-progress p { margin: 0; color: var(--muted); font-size: 0.78rem; }
 	.message-log {
 		flex: 0 0 auto;
 		height: clamp(240px, 40dvh, 420px);
@@ -1887,32 +1732,6 @@
 		background: #f7faf9;
 	}
 	.message.from-service strong { color: var(--muted); }
-	.handoff-trigger {
-		border: 1px solid var(--yellow);
-		border-radius: 999px;
-		padding: 0 12px;
-		background: var(--yellow);
-		color: var(--navy);
-		font-weight: 800;
-	}
-	.handoff-trigger:hover { background: #ffdc85; color: var(--navy); }
-	.handoff-trigger:disabled { opacity: 0.7; }
-	.handoff-unavailable {
-		color: #c6dfe4;
-		text-decoration: none;
-		cursor: not-allowed;
-	}
-	.handoff-unavailable:hover { color: #c6dfe4; }
-	.handoff-hours {
-		margin: 0;
-		padding: 9px 18px;
-		border-bottom: 1px solid #e7d8a6;
-		background: #fffdf3;
-		color: #5b470d;
-		font-size: 0.78rem;
-		text-wrap: pretty;
-	}
-	.handoff-hours strong { margin-right: 4px; }
 	.handoff-banner {
 		display: flex;
 		align-items: flex-start;
@@ -2015,7 +1834,6 @@
 		color: var(--muted);
 		font-size: 0.76rem;
 	}
-	.help-line strong { color: var(--ink); }
 	.finish-bar {
 		display: flex;
 		flex-wrap: wrap;
@@ -2027,18 +1845,8 @@
 		border-left: 1px solid var(--teal);
 		background: var(--surface-teal);
 	}
-	.finish-copy { flex: 1 1 320px; }
-	.finish-bar strong { display: block; font-size: 0.95rem; }
-	.finish-bar p { margin: 4px 0 0; color: #355d62; font-size: 0.84rem; }
 	.finish-button { flex: 0 0 auto; min-height: 48px; }
 	.composer-links { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
-	.chat-footnote {
-		max-width: 760px;
-		margin: 12px auto 0;
-		color: var(--muted);
-		font-size: 0.8rem;
-		text-align: center;
-	}
 	.review-card {
 		padding: 26px;
 		border-top: 4px solid var(--navy);
@@ -2059,16 +1867,6 @@
 		letter-spacing: -0.025em;
 	}
 	.review-header p:last-child { margin: 8px 0 0; color: var(--muted); }
-	.review-header p.review-mode { color: var(--teal-dark); font-size: 0.78rem; font-weight: 800; }
-	.draft-chip {
-		flex: 0 0 auto;
-		padding: 5px 9px;
-		border-radius: 4px;
-		background: var(--attention);
-		color: #644d06;
-		font-size: 0.76rem;
-		font-weight: 800;
-	}
 	.review-section { padding: 20px 0; border-bottom: 1px solid var(--rule); }
 	.review-section h3 { margin: 0 0 12px; font-size: 1.02rem; }
 	.review-section > p { margin: 0 0 12px; color: var(--muted); }
@@ -2110,8 +1908,6 @@
 		letter-spacing: 0.04em;
 	}
 	.nik-edit-button { margin-left: auto; min-height: 36px; font-size: 0.82rem; }
-	.unknown-list { margin: 0; padding-left: 20px; color: var(--ink); }
-	.unknown-list li + li { margin-top: 4px; }
 	.contact-section fieldset { margin: 0; padding: 0; border: 0; }
 	.contact-note {
 		margin: 12px 0 0;
@@ -2205,7 +2001,7 @@
 		gap: 10px;
 		margin-top: 24px;
 	}
-	@media (max-width: 680px) {
+@media (max-width: 680px) {
 		.chat-page { width: calc(100% - 32px); padding: 12px 0 32px; }
 		.chat-page-heading { margin-bottom: 10px; }
 		.chat-page-heading h1 { font-size: 1.4rem; }
@@ -2222,11 +2018,6 @@
 		}
 		.chat-card-bar { padding: 8px 12px; }
 		.chat-card-bar p { font-size: 0.7rem; }
-		.chat-bar-actions { gap: 10px; }
-		.bar-button { font-size: 0.78rem; }
-		.chat-progress { padding: 8px 12px; gap: 8px; }
-		.progress-track { flex-basis: 90px; }
-		.chat-progress p { font-size: 0.72rem; }
 		.handoff-banner { flex-direction: column; gap: 8px; padding: 10px 12px; }
 		.handoff-banner-actions { width: 100%; }
 		.handoff-cancel { width: 100%; }
@@ -2252,39 +2043,189 @@
 		.receipt-actions { flex-direction: column; }
 		.receipt-actions .button-primary,
 		.receipt-actions .button-secondary { width: 100%; }
-	}
-
-	.report-steps { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:16px 0 24px; padding:0; list-style:none; }
-	.report-steps li { display:flex; align-items:center; gap:8px; padding:12px 0; border-bottom:2px solid var(--border); font-size:.85rem; color:var(--muted); }
-	.report-steps li span { display:grid; place-items:center; width:25px; height:25px; flex-shrink:0; border:1px solid var(--border); border-radius:50%; font-size:.78rem; }
-	.report-steps li.current { color:var(--teal-dark); border-bottom-color:var(--teal); font-weight:700; }
-	.report-steps li.current span { border-color:var(--teal); background:var(--surface-teal); }
-	.report-steps li.complete { color:var(--teal-dark); }
+}
 	.start-card,.identity-card,.review-card,.chat-card { border-radius:16px; border-top-width:1px; }
 	.start-card,.identity-card { padding:32px; }
-	.start-card h2,.identity-card h2,.review-header h2 { font-size:1.6rem; letter-spacing:-.02em; }
+.start-card h2,
+.identity-card h2,
+.review-header h2 {
+	font-size: 1.6rem;
+	letter-spacing: -0.02em;
+}
 	.start-intro { color:var(--ink); margin:12px 0; }
-	.start-privacy { color:var(--muted); font-size:.88rem; margin:12px 0 28px; }
+.start-privacy {
+	color: var(--muted);
+	font-size: 0.88rem;
+	margin: 12px 0 28px;
+}
 	.start-privacy a { color:var(--teal-dark); }
 	.safety-question { padding:24px; margin:0 0 20px; background:var(--surface-teal); border:0; border-radius:12px; }
 	.safety-question h3 { font-size:1.15rem; }
 	.safety-actions { margin-top:20px; }
 	.service-details { margin-top:20px; }
 	.service-details .mode-panel { margin:0 0 12px; }
-	.optional-identity { margin-top:24px; }
-	.optional-identity .field { margin:8px 0 20px; }
-	.copy-status { min-height:1.5em; color:var(--teal-dark); font-size:.9rem; }
-	@media(max-width:620px) {
+.copy-status {
+	min-height: 1.5em;
+	color: var(--teal-dark);
+	font-size: 0.9rem;
+}
+@media (max-width: 620px) {
 		.chat-page,.chat-page.chat-stage,.chat-page.review-stage { padding-top:20px; }
 		.start-card,.identity-card { padding:24px 20px; }
 		.safety-question { padding:20px 16px; }
 		.start-card h2,.identity-card h2,.review-header h2 { font-size:1.35rem; }
-		.report-steps { gap:8px; margin:8px 0 20px; }
-		.report-steps li { font-size:.73rem; gap:5px; align-items:start; flex-direction:column; }
-		.report-steps li span { width:24px; height:24px; }
 		.receipt-actions { flex-direction:column; }
-	}
+}
 
- .chronology-chat .message-log { height:clamp(360px,55dvh,680px); max-height:none; }
- @media(max-width:600px) { .chronology-chat .message-log { height:clamp(300px,48dvh,540px); } }
+.chronology-chat .message-log {
+	height: clamp(200px, calc(100dvh - 390px), 520px);
+	max-height: none;
+}
+.chat-tools {
+	position: relative;
+	border: 0;
+	margin-left: auto;
+}
+.chat-tools summary {
+	padding: 10px;
+	min-height: 44px;
+	color: inherit;
+}
+.chat-tools > div {
+	position: absolute;
+	right: 0;
+	top: 100%;
+	width: min(320px, calc(100vw - 40px));
+	padding: 20px;
+	background: var(--paper);
+	color: var(--ink);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	z-index: 10;
+}
+.chat-tools p {
+	font-size: 0.875rem;
+	line-height: 1.5;
+}
+.quick-answers {
+	border: 0;
+	margin-bottom: 8px;
+}
+.quick-answers summary {
+	padding: 4px 0;
+	min-height: 44px;
+	font-size: 0.875rem;
+	color: var(--muted);
+}
+.victim-review > p {
+	color: var(--muted);
+	font-size: 0.9375rem;
+}
+.victim-review > summary {
+	font-size: 1rem;
+}
+.victim-review > summary > span {
+	font-size: 0.875rem;
+	font-weight: 400;
+	color: var(--muted);
+}
+@media (max-width: 600px) {
+	.chat-page {
+		padding-top: 12px;
+	}
+	.chat-page-heading {
+		margin-bottom: 12px;
+	}
+	.chat-page-heading h1 {
+		font-size: 1.25rem;
+	}
+	.page-back {
+		font-size: 0.8125rem;
+	}
+	.composer {
+		padding: 16px;
+		padding-bottom: max(16px, env(safe-area-inset-bottom));
+	}
+	.composer-links {
+		gap: 12px;
+		flex-wrap: wrap;
+	}
+	.composer-links button {
+		min-height: 44px;
+	}
+	.message-log {
+		padding: 16px;
+	}
+	.review-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.review-card {
+		padding: 20px 16px;
+	}
+	.review-section {
+		padding-block: 20px;
+	}
+	.finish-bar {
+		gap: 12px;
+	}
+}
+.chronology-chat.finished .message-log {
+	height: clamp(180px, calc(100dvh - 570px), 380px);
+}
+.chronology-chat .finish-bar {
+	padding: 12px;
+	margin-bottom: 12px;
+}
+.chronology-chat .finish-button {
+	width: 100%;
+}
+@media (max-width: 600px) {
+	.handoff-banner {
+		flex-direction: row;
+		align-items: center;
+	}
+	.handoff-banner p {
+		font-size: 0.8125rem;
+	}
+	.handoff-banner-actions {
+		flex-shrink: 0;
+	}
+	.handoff-cancel {
+		max-width: 120px;
+	}
+	.review-header {
+		margin-bottom: 0;
+	}
+	.review-header p {
+		margin: 0;
+	}
+	.review-card .review-grid input,
+	.review-card .review-grid select {
+		font-weight: 400;
+	}
+}
+.review-card .privacy-section {
+	background: transparent;
+	padding: 20px 0;
+	border: 0;
+}
+.review-card .privacy-check {
+	font-size: 1rem;
+}
+.chat-tools > div p {
+	color: var(--muted);
+}
+@media (max-width: 600px) {
+	.quick-replies button {
+		min-height: 44px;
+	}
+}
+@media (max-width: 600px) {
+	.chronology-chat {
+		overflow: visible;
+	}
+	.composer textarea {
+		scroll-margin-block: 90px;
+	}
+}
 </style>

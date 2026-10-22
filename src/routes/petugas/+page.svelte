@@ -191,7 +191,7 @@
 	<title>Meja petugas | LAPOR AMAN</title>
 </svelte:head>
 
-<div class="staff-page">
+<div class="staff-page" class:detail-open={detailsOpen}>
 	<section class="staff-workspace" id="antrean">
 		<header class="staff-title">
 			<div>
@@ -202,7 +202,7 @@
 			<div class="staff-title-actions"><a class="button-secondary" href="/petugas/percakapan">Buka percakapan langsung</a></div>
 		</header>
 
-		<div class="work-instructions" aria-label="Cara memeriksa laporan"><span><b>1</b> Baca cerita dan data</span><span><b>2</b> Catat pemeriksaan bila perlu</span><span><b>3</b> Simpan keputusan beserta alasan</span></div>
+        <details class="staff-help"><summary>Cara memeriksa laporan</summary><p>Baca keterangan pelapor, tambahkan catatan jika perlu, lalu simpan keputusan beserta alasannya.</p></details>
 		<div class="staff-controls"><label class="queue-search">Cari laporan<input type="search" bind:value={search} disabled={busy} oninput={() => (detailsOpen = false)} placeholder="Kode, nama korban, atau lokasi" /></label><label class="queue-filter">Status laporan<select bind:value={queueFilter} disabled={busy} onchange={() => (detailsOpen = false)}><option value="all">Semua laporan</option><option value="open">Belum ada keputusan</option><option value="under_review">Sedang diperiksa</option><option value="decision_recorded">Keputusan tercatat</option></select></label></div>
 
 		{#if viewState === 'empty'}
@@ -273,74 +273,9 @@
 						<div><dt>Hubungan dengan korban</dt><dd>{selected.relation}</dd></div>
 						<div><dt>Waktu kejadian</dt><dd>{selected.time}</dd></div>
 						<div><dt>Lokasi umum</dt><dd>{selected.location}</dd></div>
-						<div><dt>Mode percakapan</dt><dd>{selected.modeLabel}</dd></div>
 						<div><dt>Kebutuhan disampaikan</dt><dd>{selected.need}</dd></div>
 						<div><dt>Preferensi kontak</dt><dd>{selected.contact}</dd></div>
-						<div><dt>Status laporan</dt><dd>{selected.statusLabel}</dd></div>
 					</dl>
-
-					<div class="restricted-note">
-						<strong>NIK tidak ditampilkan di daftar laporan.</strong>
-						<p>
-							Admin dapat membuka NIK di bagian identitas laporan ini atau <a href="/rekap">rekap</a>.
-							Setiap pembukaan NIK dicatat dalam audit.
-						</p>
-					</div>
-
-					<section class="transcript-section" aria-labelledby="transcript-title">
-						<div class="transcript-heading">
-							<div>
-								<h3 id="transcript-title">Riwayat percakapan</h3>
-								<p>
-									Hanya petugas yang ditugaskan dan admin. Setiap pembukaan riwayat dicatat
-									dalam audit.
-								</p>
-							</div>
-							<div class="transcript-actions">
-								<button
-									class="button-secondary"
-									type="button"
-									onclick={loadTranscript}
-									disabled={transcriptLoading}
-								>
-									{transcriptLoading
-										? 'Memuat...'
-										: transcriptOpen
-											? 'Muat ulang riwayat'
-											: 'Tampilkan riwayat'}
-								</button>
-								{#if transcriptOpen}
-									<button class="link-button" type="button" onclick={hideTranscript}>
-										Sembunyikan
-									</button>
-								{/if}
-							</div>
-						</div>
-						{#if transcriptOpen}
-							{#if transcriptLoading}
-								<p class="transcript-state" aria-live="polite">Memuat riwayat percakapan...</p>
-							{:else if transcriptError}
-								<p class="field-error" role="alert">{transcriptError}</p>
-							{:else if transcriptMessages.length}
-								<ol class="transcript-list">
-									{#each transcriptMessages as item (item.id)}
-										<li class:from-user={item.source === 'user'}>
-											<div class="transcript-meta">
-												<strong>{transcriptLabel(item)}</strong>
-												{#if item.source === 'fallback'}
-													<span class="transcript-source">Panduan terstruktur</span>
-												{/if}
-												<time datetime={item.createdAt}>{formatReportDate(item.createdAt)}</time>
-											</div>
-											<p>{item.body}</p>
-										</li>
-									{/each}
-								</ol>
-							{:else}
-								<p class="transcript-state">Belum ada pesan yang tersimpan untuk laporan ini.</p>
-							{/if}
-						{/if}
-					</section>
 
 					{#if !decisionRecorded}
 						<details class="review-note-form"><summary>2. Tambahkan catatan pemeriksaan (bila perlu)</summary>
@@ -403,8 +338,64 @@
 							>
 						</section>
 					{/if}
-				<ReportIdentity id={selected.id} isAdmin={data.isAdmin} contactPreference={selected.contact} />
-{#if data.isAdmin}<DeleteReport id={selected.id} csrfToken={data.csrfToken} />{/if}
+
+					<section class="transcript-section" aria-labelledby="transcript-title">
+						<div class="transcript-heading">
+							<div>
+								<h3 id="transcript-title">Riwayat percakapan</h3>
+								<p>
+									Hanya petugas yang ditugaskan dan admin. Setiap pembukaan riwayat dicatat
+									dalam audit.
+								</p>
+							</div>
+							<div class="transcript-actions">
+								<button
+									class="button-secondary"
+									type="button"
+									onclick={loadTranscript}
+									disabled={transcriptLoading}
+								>
+									{transcriptLoading
+										? 'Memuat...'
+										: transcriptOpen
+											? 'Muat ulang riwayat'
+											: 'Tampilkan riwayat'}
+								</button>
+								{#if transcriptOpen}
+									<button class="link-button" type="button" onclick={hideTranscript}>
+										Sembunyikan
+									</button>
+								{/if}
+							</div>
+						</div>
+						{#if transcriptOpen}
+							{#if transcriptLoading}
+								<p class="transcript-state" aria-live="polite">Memuat riwayat percakapan...</p>
+							{:else if transcriptError}
+								<p class="field-error" role="alert">{transcriptError}</p>
+							{:else if transcriptMessages.length}
+								<ol class="transcript-list">
+									{#each transcriptMessages as item (item.id)}
+										<li class:from-user={item.source === 'user'}>
+											<div class="transcript-meta">
+												<strong>{transcriptLabel(item)}</strong>
+												{#if item.source === 'fallback'}
+													<span class="transcript-source">Panduan terstruktur</span>
+												{/if}
+												<time datetime={item.createdAt}>{formatReportDate(item.createdAt)}</time>
+											</div>
+											<p>{item.body}</p>
+										</li>
+									{/each}
+								</ol>
+							{:else}
+								<p class="transcript-state">Belum ada pesan yang tersimpan untuk laporan ini.</p>
+							{/if}
+						{/if}
+					</section>
+
+<ReportIdentity id={selected.id} isAdmin={data.isAdmin} contactPreference={selected.contact} />
+{#if data.isAdmin}<details class="report-management"><summary>Tindakan laporan</summary><DeleteReport id={selected.id} csrfToken={data.csrfToken} /></details>{/if}
 </article>
 				{/if}
 			</div>
@@ -452,9 +443,6 @@
 	.detail-facts div:nth-last-child(-n + 2) { border-bottom: 0; }
 	.detail-facts dt { color: var(--muted); font-size: 0.76rem; }
 	.detail-facts dd { margin: 5px 0 0; font-size: 0.92rem; }
-	.restricted-note { margin-top: 20px; padding: 14px 16px; border-left: 1px solid #d4a72c; background: var(--surface); color: var(--muted); font-size: 0.86rem; }
-	.restricted-note p { margin: 4px 0 0; }
-	.restricted-note a { color: #493a0b; font-weight: 800; }
 	.transcript-section { margin-top: 28px; padding: 22px; border: 1px solid var(--border); background: var(--surface); }
 	.transcript-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
 	.transcript-heading h3 { margin: 0; font-size: 1.08rem; }
@@ -492,7 +480,7 @@
 	.error-state .button-secondary { margin-top: 18px; }
 	.mobile-back { display: none; }
 
-	@media (max-width: 860px) {
+@media (max-width: 860px) {
 		.staff-page { padding: 24px 16px 56px; }
 		.staff-workspace { padding: 24px 20px; }
 		.staff-title, .staff-controls { align-items: start; grid-template-columns: 1fr; flex-direction: column; }
@@ -511,29 +499,42 @@
 		.transcript-section { padding: 18px; }
 		.transcript-heading { flex-direction: column; }
 		.transcript-list li { max-width: 94%; }
-	}
+}
 
-	@media (max-width: 540px) {
+@media (max-width: 540px) {
 		.staff-workspace { padding: 22px 16px; }
 		.detail-heading { flex-direction: column; }
 		.detail-heading .status-chip { align-self: flex-start; }
-	}
-
-	.work-instructions { display:flex; flex-wrap:wrap; gap:12px 24px; margin-top:24px; padding:16px 0; border-block:1px solid var(--rule); color:var(--muted); font-size:.82rem; }
-	.work-instructions span { display:flex; align-items:center; gap:8px; }
-	.work-instructions b { display:grid; place-items:center; width:24px; height:24px; border:1px solid var(--border); border-radius:50%; font-weight:600; }
+}
 	.staff-controls { display:grid; grid-template-columns:minmax(200px,1fr) 240px; gap:16px; margin:24px 0; }
-	.queue-search,.queue-filter { display:grid; gap:8px; font-size:.85rem; font-weight:650; }
+.queue-search,
+.queue-filter {
+	display: grid;
+	gap: 8px;
+	font-size: 0.85rem;
+	font-weight: 650;
+}
 	.queue-search input,.queue-filter select { width:100%; min-height:46px; padding:10px 12px; border:1px solid #97aab2; border-radius:8px; background:#fff; color:var(--ink); }
-	.inbox-grid { grid-template-columns:minmax(260px,.75fr) minmax(0,1.5fr); min-height:480px; border-radius:12px; }
+.inbox-grid {
+	grid-template-columns: minmax(260px, 0.75fr) minmax(0, 1.5fr);
+	min-height: 480px;
+	border-radius: 12px;
+}
 	.queue-id { white-space:normal; overflow-wrap:anywhere; }
 	.queue-row { grid-template-columns:minmax(0,1fr); gap:7px; padding:18px; }
 	.queue-row.selected { border-left-width:1px; padding-left:17px; }
-	.queue-time { grid-row:3; text-align:left; font-size:.78rem; }
+.queue-time {
+	grid-row: 3;
+	text-align: left;
+	font-size: 0.78rem;
+}
 	.queue-person { color:var(--muted); overflow-wrap:anywhere; }
 	.queue-empty { padding:24px 20px; }
 	.queue-empty h3 { font-size:1rem; }
-	.queue-empty p { font-size:.88rem; color:var(--muted); }
+.queue-empty p {
+	font-size: 0.88rem;
+	color: var(--muted);
+}
 	.report-detail { min-width:0; padding:24px; }
 	.detail-heading h2 { font-size:1.15rem; overflow-wrap:anywhere; }
 	.detail-heading { flex-wrap:wrap; gap:12px; }
@@ -541,5 +542,52 @@
 	.review-note-form { padding:0; background:transparent; }
 	.review-note-form summary { font-size:1rem; }
 	.review-note-form textarea { margin-bottom:8px; }
-	@media(max-width:860px) { .inbox-grid { min-height:0; } .staff-controls { grid-template-columns:1fr; } .report-detail { padding:24px 16px; } .work-instructions { display:grid; gap:10px; } }
+@media (max-width: 860px) { .inbox-grid { min-height:0; } .staff-controls { grid-template-columns:1fr; } .report-detail { padding:24px 16px; }
+}
+.staff-help {
+	margin-top: 12px;
+}
+.staff-help p {
+	font-size: 0.9375rem;
+	color: var(--muted);
+}
+.report-management {
+	margin-top: 24px;
+}
+.transcript-section {
+	background: transparent;
+	padding: 20px 0;
+	border: 0;
+	border-top: 1px solid var(--border);
+}
+@media (max-width: 860px) {
+	.detail-open .staff-title {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+	.detail-open .staff-help,
+	.detail-open .staff-controls {
+		display: none;
+	}
+	.report-detail .detail-facts {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		border: 0;
+		gap: 20px 16px;
+	}
+	.report-detail .detail-facts div {
+		padding: 0;
+		border: 0;
+	}
+	.report-detail .detail-facts dd {
+		overflow-wrap: anywhere;
+	}
+	.detail-section p {
+		line-height: 1.65;
+	}
+}
 </style>

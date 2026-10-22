@@ -170,7 +170,7 @@
 				</div>
 			</header>
 
-			<div class="recap-notice">
+			<details class="recap-notice"><summary>Privasi unduhan dan informasi notifikasi</summary>
 				<strong>NIK hanya untuk tindak lanjut.</strong>
 				<p>
 					NIK lengkap dapat dibuka pada detail laporan di halaman ini. NIK dapat
@@ -188,7 +188,7 @@
 						{/if}
 					</p>
 				{/if}
-			</div>
+			</details>
 
 			<div class="summary-grid" aria-label="Ringkasan laporan">
 				<article class="summary-card total">
@@ -353,7 +353,7 @@
 					{/if}
 
 					<ReportIdentity id={selected.id} isAdmin={false} contactPreference={selected.contact} />
-<DeleteReport id={selected.id} csrfToken={data.csrfToken ?? ''} />
+<details class="report-management"><summary>Tindakan laporan</summary><DeleteReport id={selected.id} csrfToken={data.csrfToken ?? ''} /></details>
 <p class="detail-note">
 						Gunakan identitas hanya untuk kebutuhan tindak lanjut layanan. Jangan membagikannya kepada pihak yang tidak berwenang.
 					</p>
@@ -459,13 +459,13 @@
 	.export-status { min-height: 1.5em; margin: 16px 0 0; color: var(--teal-dark); font-size: 0.84rem; font-weight: 700; }
 	.recap-footnote { margin: 8px 0 0; color: var(--muted); font-size: 0.8rem; }
 
-	@media (max-width: 980px) {
+@media (max-width: 980px) {
 		.gate-shell { grid-template-columns: 1fr; }
 		.gate-side { border-top: 1px solid var(--border); border-left: 0; }
 		.summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-	}
+}
 
-	@media (max-width: 1100px) {
+@media (max-width: 1100px) {
 		.recap-page { padding: 24px 16px 56px; }
 		.gate-main,
 		.gate-side,
@@ -498,19 +498,55 @@
 		.detail-facts { grid-template-columns: 1fr; }
 		.detail-head { flex-direction: column; }
 		.detail-head .status-chip { align-self: flex-start; }
-	}
+}
 
-	@media (max-width: 460px) {
+@media (max-width: 460px) {
 		.summary-grid { grid-template-columns: 1fr; }
 		.summary-card { min-height: 108px; }
 		.nik-button { display: block; margin: 8px 0 0; }
-	}
+}
 
 	.recap-toolbar { flex-wrap:wrap; align-items:end; gap:16px; }
-	.recap-search { display:grid; gap:8px; font-size:.85rem; font-weight:650; flex:1; min-width:180px; }
+.recap-search {
+	display: grid;
+	gap: 8px;
+	font-size: 0.85rem;
+	font-weight: 650;
+	flex: 1;
+	min-width: 180px;
+}
 	.recap-search input { min-height:46px; width:100%; padding:10px 12px; border:1px solid #97aab2; border-radius:8px; background:#fff; color:var(--ink); }
-	@media(max-width:1100px) {
+@media (max-width: 1100px) {
 		.recap-toolbar { align-items:stretch; }
 		.recap-search { width:100%; min-width:0; flex:auto; }
+}
+@media (max-width: 700px) {
+	.recap-page .summary-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
+	.recap-page .summary-card {
+		padding: 12px;
+	}
+	.recap-page .summary-card p {
+		font-size: 0.875rem;
+		margin: 0;
+	}
+	.recap-page .summary-card strong {
+		font-size: 1.35rem;
+	}
+	.recap-page .summary-card span {
+		display: none;
+	}
+	.recap-header h1 {
+		font-size: 1.5rem;
+	}
+	.recap-notice {
+		padding: 0;
+		border: 0;
+		background: transparent;
+	}
+	.recap-notice > summary {
+		font-size: 0.875rem;
+	}
+}
 </style>

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { violenceTypes } from '../education';
 	import { victimFields, type VictimProfile } from '../victim';
-	let { profile = $bindable(), relation, prefix = 'victim' }: { profile: VictimProfile; relation: string; prefix?: string } = $props();
+	let { profile = $bindable(), relation, prefix = 'victim', embedded = false }: { profile: VictimProfile; relation: string; prefix?: string; embedded?: boolean } = $props();
 	const options: Record<string, string[]> = {
 		gender: ['Perempuan', 'Laki-laki', 'Tidak ingin menyebutkan'],
 		education: ['Belum sekolah', 'SD atau sederajat', 'SMP atau sederajat', 'SMA atau sederajat', 'Perguruan tinggi', 'Lainnya'],
@@ -11,8 +11,7 @@
 	};
 </script>
 
-<details class="victim-details">
-	<summary>Lengkapi data korban dan kejadian <span>Opsional</span></summary>
+{#snippet fields()}
 	<p>Data yang Anda ketahui membantu pemeriksaan petugas. Isi sejauh yang aman dan Anda ketahui; kolom kosong tidak menghalangi laporan. Identitas tidak dikirim ke AI.</p>
 	<div class="victim-grid">
 		{#each victimFields as field}
@@ -34,21 +33,50 @@
 		<div class="type-options">{#each violenceTypes as item}<label><input type="checkbox" bind:group={profile.violenceTypes} value={item.id} />{item.name}</label>{/each}</div>
 	</fieldset>
 	<a href="/edukasi" target="_blank" rel="noopener">Baca penjelasan jenis kekerasan</a>
+{/snippet}
+{#if embedded}
+	{@render fields()}
+{:else}
+<details class="victim-details">
+	<summary>Lengkapi data korban dan kejadian <span>Opsional</span></summary>
+	{@render fields()}
 </details>
+{/if}
 
 <style>
 	.victim-details { margin:24px 0; padding:18px 0; border-block:1px solid var(--border); }
 	summary { font-weight:700; color:var(--navy); cursor:pointer; }
-	summary span,legend span { font-weight:400; color:var(--muted); font-size:.85rem; margin-left:8px; }
-	p { font-size:.9rem; color:var(--muted); max-width:70ch; }
+summary span,
+legend span {
+	font-weight: 400;
+	color: var(--muted);
+	font-size: 0.85rem;
+	margin-left: 8px;
+}
+p {
+	font-size: 0.9rem;
+	color: var(--muted);
+	max-width: 70ch;
+}
 	.victim-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin:22px 0; }
-	label { display:flex; flex-direction:column; gap:8px; font-size:.9rem; font-weight:600; }
+label {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	font-size: 0.9rem;
+	font-weight: 600;
+}
 	.wide { grid-column:1/-1; }
 	input,select,textarea { width:100%; font:inherit; padding:11px; border:1px solid var(--border); border-radius:8px; background:var(--paper); color:var(--ink); }
 	fieldset { border:0; padding:0; margin:24px 0; }
 	legend { font-weight:700; }
 	.type-options { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
 	.type-options label { flex-direction:row; align-items:center; min-height:44px; }
-	input[type=checkbox] { width:20px; height:20px; flex-shrink:0; }
-	@media(max-width:600px) { .victim-grid,.type-options { grid-template-columns:1fr; } }
+input[type='checkbox'] {
+	width: 20px;
+	height: 20px;
+	flex-shrink: 0;
+}
+@media (max-width: 600px) { .victim-grid,.type-options { grid-template-columns:1fr; }
+}
 </style>

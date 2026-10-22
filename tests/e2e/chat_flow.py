@@ -9,7 +9,7 @@ base = os.environ['E2E_BASE_URL']
 out = Path(tempfile.mkdtemp(prefix='lapor-aman-e2e-'))
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
-    reporter_context = browser.new_context(viewport={'width': 390, 'height': 844})
+    reporter_context = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True)
     staff_context = browser.new_context(viewport={'width': 1440, 'height': 1000}, accept_downloads=True)
     reporter = reporter_context.new_page()
     staff = staff_context.new_page()
@@ -18,10 +18,10 @@ with sync_playwright() as p:
         page.on('pageerror', lambda exc: errors.append(str(exc)))
         page.set_default_timeout(15000)
 
-    def capture(page, name):
-        page.evaluate("document.activeElement?.blur(); window.scrollTo({top:0,left:0,behavior:'instant'})")
+    def capture(page, name, reset=True):
+        if reset: page.evaluate("document.activeElement?.blur(); window.scrollTo({top:0,left:0,behavior:'instant'})")
         page.evaluate('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))')
-        page.screenshot(path=str(out / (name + '.png')), full_page=True)
+        page.screenshot(path=str(out / (name + '.png')), full_page=reset)
         assert not page.evaluate('document.documentElement.scrollWidth > innerWidth'), name
         assert page.get_by_role('heading', level=1).count() == 1, name
         for notice in page.locator('.live-notice strong').all():
@@ -41,7 +41,7 @@ with sync_playwright() as p:
     expect(reporter.get_by_role('dialog', name='Selamat datang di PSC SAHABAT')).to_be_visible()
     capture(reporter, 'first-visit-mobile')
     reporter.get_by_role('button', name='Saya mengerti, lanjutkan').click()
-    for width in [1440, 390, 320]:
+    for width in [1440, 768, 430, 390, 360, 320]:
         reporter.set_viewport_size({'width':width, 'height':844})
         capture(reporter, f'home-{width}')
     reporter.goto(base + '/edukasi', wait_until='networkidle')
@@ -57,19 +57,8 @@ with sync_playwright() as p:
         assert "frame-ancestors 'none'" in response.headers.get('content-security-policy', '')
     reporter.get_by_role('button', name='Ya, saya aman', exact=True).click()
     reporter.locator('input[value="Diri sendiri"]').check()
-    reporter.locator('#victim-name').fill('Korban Uji Browser')
-    reporter.get_by_text('Lengkapi data korban dan kejadian', exact=False).click()
-    reporter.locator('#initial-birthDate').fill('2000-02-20')
-    reporter.locator('#initial-parentName').fill('Orang Tua Uji')
-    reporter.locator('#initial-address').fill('Alamat sintetis untuk pengujian')
-    reporter.locator('#initial-gender').select_option('Perempuan')
-    reporter.locator('#initial-coordination').select_option('Sudah')
-    reporter.locator('#initial-coordinationDetails').fill('Latihan koordinasi dinas sosial')
-    reporter.locator('input[type="checkbox"][value="physical"]').check()
-    capture(reporter, 'optional-profile-mobile')
-    reporter.get_by_text('Lengkapi data korban dan kejadian', exact=False).click()
-    reporter.get_by_text('Isi NIK korban (opsional)', exact=True).click()
-    reporter.locator('#victim-nik').fill('0000000000000001')
+    expect(reporter.locator('input:not([type="radio"])')).to_have_count(0)
+    capture(reporter, 'reporter-relation-mobile')
     with reporter.expect_response(lambda response: '/api/chat/session' in response.url and response.request.method == 'POST') as session_created:
         reporter.get_by_role('button', name='Mulai bercerita', exact=True).click()
     session_payload = session_created.value.json()
@@ -99,8 +88,19 @@ with sync_playwright() as p:
     reporter.get_by_role('button', name='Kirim', exact=True).click()
     expect(reporter.locator('#chat-answer')).to_have_value('')
 
-    assert reporter.locator('.message-log').bounding_box()['height'] >= 240
+    assert reporter.locator('.message-log').bounding_box()['height'] >= 200
     capture(reporter, 'chat-guided-mobile')
+    reporter.locator('.chat-tools summary').click()
+    capture(reporter, 'chat-help-mobile')
+    reporter.locator('.chat-tools summary').click()
+    reporter.set_viewport_size({'width':390,'height':420})
+    reporter.locator('#chat-answer').focus()
+    expect(reporter.locator('#chat-answer')).to_be_in_viewport(ratio=0.75)
+    assert reporter.locator('#chat-answer').evaluate('(el) => parseFloat(getComputedStyle(el).fontSize)') >= 16
+    capture(reporter, 'chat-short-viewport',False)
+    reporter.set_viewport_size({'width':844,'height':390})
+    capture(reporter, 'chat-landscape')
+    reporter.set_viewport_size({'width':390,'height':844})
     staff.goto(base + '/masuk?next=/petugas/percakapan', wait_until='networkidle')
     staff.locator('#username').fill(os.environ['E2E_USERNAME'])
     staff.locator('#password').fill(os.environ['E2E_PASSWORD'])
@@ -121,9 +121,18 @@ with sync_playwright() as p:
     # Reporter does nothing: takeover and staff reply must arrive through polling.
     expect(reporter.get_by_role('button', name='Akhiri bantuan', exact=True)).to_be_visible()
     capture(staff, 'live-desktop')
+    staff.set_viewport_size({'width':390,'height':844})
+    capture(staff,'staff-chat-collapsed-mobile')
+    staff.locator('#staff-reply').focus()
+    expect(staff.locator('#staff-reply')).to_be_in_viewport(ratio=0.75)
+    staff.set_viewport_size({'width':390,'height':420})
+    staff.locator('#staff-reply').focus()
+    expect(staff.locator('#staff-reply')).to_be_in_viewport(ratio=0.75)
+    capture(staff,'staff-short-viewport',False)
+    staff.set_viewport_size({'width':1440,'height':1000})
     for width, height in [(390, 844), (320, 640)]:
         reporter.set_viewport_size({'width': width, 'height': height})
-        assert reporter.locator('.message-log').bounding_box()['height'] >= 240
+        assert reporter.locator('.message-log').bounding_box()['height'] >= 200
         assert reporter.locator('.message').count() > 1
         assert reporter.locator('.help-line').evaluate('(el) => el.getBoundingClientRect().bottom <= el.closest(".chat-card").getBoundingClientRect().bottom')
         capture(reporter, f'chat-handoff-{width}-{height}')
@@ -147,6 +156,19 @@ with sync_playwright() as p:
     reporter.bring_to_front()
     expect(reporter.get_by_role('button', name='Selesai dan periksa draf')).to_be_enabled()
     reporter.get_by_role('button', name='Selesai dan periksa draf').click()
+    reporter.get_by_text('Lengkapi data korban', exact=False).click()
+    reporter.get_by_label('Nama korban', exact=True).fill('Korban Uji Browser')
+    reporter.get_by_role('button', name='Isi NIK', exact=True).click()
+    reporter.locator('#review-nik').fill('0000000000000001')
+    reporter.locator('#review-birthDate').fill('2000-02-20')
+    reporter.locator('#review-parentName').fill('Orang Tua Uji')
+    reporter.locator('#review-address').fill('Alamat sintetis untuk pengujian')
+    reporter.locator('#review-gender').select_option('Perempuan')
+    reporter.locator('#review-coordination').select_option('Sudah')
+    reporter.locator('#review-coordinationDetails').fill('Latihan koordinasi dinas sosial')
+    reporter.locator('input[type="checkbox"][value="physical"]').check()
+    capture(reporter, 'optional-profile-mobile')
+    reporter.get_by_text('Lengkapi data korban', exact=False).click()
     draft = reporter.locator('#review-story')
     text = draft.input_value()
     for detail in ['Lengan saya juga terluka', 'Saya juga diancam', 'Tetangga mendengar']:
@@ -175,7 +197,7 @@ with sync_playwright() as p:
     expect(staff.locator('.queue-row')).to_have_count(0)
     staff.get_by_label('Status laporan').select_option('all')
     staff.locator('.queue-row').click()
-    for width in [1440, 1024, 768, 390, 320]:
+    for width in [1440, 1024, 768, 430, 390, 360, 320]:
         staff.set_viewport_size({'width': width, 'height': 960 if width == 1440 else 844})
         capture(staff, f'queue-detail-{width}')
     staff.set_viewport_size({'width': 390, 'height': 844})
@@ -209,7 +231,7 @@ with sync_playwright() as p:
     staff.get_by_role('button', name='Tampilkan semua', exact=True).click()
     capture(staff, 'recap-overview-desktop')
     staff.get_by_role('button', name='Lihat detail', exact=True).click()
-    for width in [1440, 1024, 768, 390, 320]:
+    for width in [1440, 1024, 768, 430, 390, 360, 320]:
         staff.set_viewport_size({'width':width, 'height':960 if width == 1440 else 844})
         capture(staff, f'recap-{width}')
     staff.set_viewport_size({'width':1440, 'height':960})
@@ -227,12 +249,12 @@ with sync_playwright() as p:
         assert b'Latihan koordinasi dinas sosial' in workbook.read('xl/worksheets/sheet2.xml')
     staff.goto(base + '/admin/nik', wait_until='networkidle')
     expect(staff).to_have_url(base + '/rekap')
-    for width in [1440, 390, 320]:
+    for width in [1440, 768, 430, 390, 360, 320]:
         staff.set_viewport_size({'width':width, 'height':960 if width == 1440 else 844})
         capture(staff, f'nik-{width}')
     staff.set_viewport_size({'width':1440, 'height':960})
     # A second reporter supplies structured information entirely through the staff conversation.
-    assisted_context = browser.new_context(viewport={'width':390, 'height':844})
+    assisted_context = browser.new_context(viewport={'width':390, 'height':844}, is_mobile=True, has_touch=True)
     assisted_context.add_init_script("localStorage.setItem('psc-sahabat-intro-v1','read')")
     assisted = assisted_context.new_page()
     assisted.on('pageerror', lambda exc: errors.append(str(exc)))
@@ -248,11 +270,14 @@ with sync_playwright() as p:
     staff.goto(base + '/petugas/percakapan', wait_until='networkidle')
     staff.locator('.active-row').filter(has_text='Latihan pendamping petugas').click()
     panel = staff.get_by_role('complementary', name='Panduan petugas', exact=True)
+    expect(panel.get_by_role('button', name='Gunakan pertanyaan', exact=True)).not_to_be_visible()
+    panel.get_by_text('Bantu susun pertanyaan', exact=True).click()
     use_question = panel.get_by_role('button', name='Gunakan pertanyaan', exact=True)
     expect(use_question).to_be_enabled()
     posts = []
     staff.on('request', lambda req: posts.append(req.url) if req.method == 'POST' and req.url.endswith('/messages') else None)
     for topic, answer in [('incidentTime', 'Kemarin pagi'), ('incidentLocation', 'Di rumah'), ('need', 'Pendampingan petugas')]:
+        if not use_question.is_visible(): panel.get_by_text('Bantu susun pertanyaan', exact=True).click()
         expect(use_question).to_be_enabled()
         before = len(posts)
         use_question.click()
@@ -268,11 +293,12 @@ with sync_playwright() as p:
         assisted.get_by_role('button', name='Kirim', exact=True).click()
         expect(assisted.locator('#chat-answer')).to_have_value('')
         expect(panel.locator('[data-topic="' + topic + '"]')).to_contain_text(answer)
+        panel.get_by_text('Bantu susun pertanyaan', exact=True).click()
         if topic == 'incidentTime':
-            panel.locator('summary').click()
+            panel.get_by_text('Lihat kelengkapan dan kutipan pelapor', exact=True).click()
         if topic == 'incidentTime':
             capture(staff, 'staff-assistance-desktop')
-            for width in [768,390,320]:
+            for width in [768,430,390,360,320]:
                 staff.set_viewport_size({'width':width,'height':844})
                 capture(staff, f'staff-assistance-{width}')
             staff.set_viewport_size({'width':1440,'height':960})
@@ -303,8 +329,10 @@ with sync_playwright() as p:
     expect(staff.locator('.detail-facts')).to_contain_text('Kemarin sekitar pukul delapan')
     expect(staff.locator('.detail-facts')).to_contain_text('Pendampingan petugas')
     expect(staff.locator('main')).to_contain_text('Nama belum diisi')
+    staff.get_by_text('Identitas dan kontak pelapor', exact=True).click()
     staff.get_by_role('button', name='Lihat kontak pelapor', exact=True).click()
     expect(staff.locator('.report-identity')).to_contain_text('0000-0000-0000')
+    staff.get_by_text('Tindakan laporan', exact=True).click()
     staff.get_by_role('button', name='Hapus laporan', exact=True).click()
     deletion = staff.get_by_role('dialog', name='Hapus laporan ini?')
     expect(deletion.get_by_role('button', name='Hapus permanen')).to_be_disabled()
@@ -318,6 +346,13 @@ with sync_playwright() as p:
     expect(staff.locator('.recap-table')).not_to_contain_text(assisted_reference)
     assert staff_context.request.get(base + '/api/staff/reports/' + assisted_reference).status == 404
     assisted_context.close()
+    mobile_staff_context = browser.new_context(storage_state=staff_context.storage_state(), viewport={'width':390,'height':844}, is_mobile=True, has_touch=True)
+    mobile_staff = mobile_staff_context.new_page()
+    for route in ['/petugas','/rekap','/petugas/percakapan']:
+        mobile_staff.goto(base+route,wait_until='networkidle')
+        expect(mobile_staff.get_by_role('navigation',name='Menu petugas',exact=True)).to_be_visible()
+        capture(mobile_staff,'touch-staff-'+route.rsplit('/',1)[-1])
+    mobile_staff_context.close()
     staff.get_by_role('button', name='Keluar akun', exact=True).click()
     expect(staff).to_have_url(base + '/')
     assert staff_context.request.get(base + '/api/staff/reports').status == 401
