@@ -160,7 +160,7 @@ npm audit --audit-level=low
 
 Integration tests run native Convex functions through `convex-test` with isolated in-memory data. They cover authorization, expired/revoked sessions, shared rate limits, draft versions, submission idempotency, decisions, encrypted guidance, stale provider output, cancellation, and takeover during AI work. This is complemented by browser tests against an actual local Convex backend.
 
-The evaluation release was verified on **22 October 2026** with 71 unit tests, 23 Convex integration tests, Node and Vercel artifact builds, secret scans, and a hosted browser flow covering manual staff replies, draft confirmation, submission, decisions, identity access, Excel export, and logout. The dependency audit reported zero known vulnerabilities at that time. These checks are a release snapshot, not a guarantee of permanent security; rerun them after code or dependency changes.
+The evaluation release was verified on **22 October 2026** with 73 unit tests, 23 Convex integration tests, Node and Vercel artifact builds, secret scans, and a hosted browser flow covering manual staff replies, draft confirmation, submission, decisions, identity access, Excel export, and logout. The dependency audit reported zero known vulnerabilities at that time. These checks are a release snapshot, not a guarantee of permanent security; rerun them after code or dependency changes.
 
 For browser verification:
 

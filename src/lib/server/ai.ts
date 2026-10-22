@@ -343,16 +343,22 @@ export async function makeChatTurn(input: ChatTurnInput): Promise<ChatTurnResult
 				chat_template_kwargs: { enable_thinking: false },
 				stream: false
 			}),
-			signal: AbortSignal.timeout(15_000)
+			signal: AbortSignal.timeout(30_000)
 		});
-		if (!response.ok) throw new Error(`NVIDIA ${response.status}`);
+		if (!response.ok) {
+			console.warn('AI chat fallback', { reason: 'provider_http', status: response.status });
+			return fallback();
+		}
 
 		const payload = (await response.json()) as {
 			choices?: Array<{ message?: { content?: string } }>;
 		};
 		const raw = payload.choices?.[0]?.message?.content?.trim() ?? '';
 		const parsed = parseAiTurn(raw);
-		if (!parsed) return fallback();
+		if (!parsed) {
+			console.warn('AI chat fallback', { reason: 'invalid_json' });
+			return fallback();
+		}
 
 		fields = extractQuotedFields(fields, parsed.extracted_fields, `${redactSensitive(story)}\n${redactSensitive(lastAnswer)}`);
 		if (!parsed.extracted_fields) fields = directAnswerFields(fields, lastAnswer, input.answerField);
@@ -367,7 +373,10 @@ export async function makeChatTurn(input: ChatTurnInput): Promise<ChatTurnResult
 
 		if (flowComplete) {
 			const optionalQuestion = isSafeOptionalQuestion(rawQuestion) ? rawQuestion : null;
-			if (!safeReply && !optionalQuestion) return fallback(false);
+			if (!safeReply && !optionalQuestion) {
+				console.warn('AI chat fallback', { reason: 'invalid_reply' });
+				return fallback(false);
+			}
 			const message = joinMessage(safeReply, optionalQuestion);
 			const messageWithFinish = /selesai/i.test(message) ? message : `${message} ${FINISH_HINT}`;
 			return {
@@ -385,22 +394,30 @@ export async function makeChatTurn(input: ChatTurnInput): Promise<ChatTurnResult
 			isMissingField(parsed.next_field) && remainingFields.includes(parsed.next_field)
 				? parsed.next_field
 				: null;
-		const nextField =
+		const acceptedField =
 			requestedField && isSafeQuestionForField(rawQuestion, requestedField)
 				? requestedField
 				: (remainingFields.find((field) => isSafeQuestionForField(rawQuestion, field)) ?? null);
-		if (!nextField) return fallback(false);
+		if (!acceptedField && !safeReply) {
+			console.warn('AI chat fallback', { reason: 'invalid_question' });
+			return fallback(false);
+		}
+		const nextField = acceptedField ?? remainingFields[0];
+		const question = acceptedField ? rawQuestion : fallbackFollowUp(nextField);
 
 		return {
-			message: joinMessage(safeReply, rawQuestion),
+			message: joinMessage(safeReply, question),
 			reply: safeReply,
-			question: rawQuestion,
+			question,
 			missingField: nextField,
 			source: 'nvidia',
 			fields,
 			flowComplete: false
 		};
-	} catch {
+	} catch (error) {
+		console.warn('AI chat fallback', {
+			reason: error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name) ? 'timeout' : 'request_failed'
+		});
 		return fallback();
 	}
 }

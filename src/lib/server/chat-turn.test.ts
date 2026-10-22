@@ -5,6 +5,29 @@ const empty = { incidentTime: '', incidentLocation: '', need: '' };
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe('pemahaman keterangan', () => {
+	it('mempertahankan jawaban layanan yang aman saat pertanyaan model harus diganti', async () => {
+		vi.stubEnv('AI_ENABLED', 'true'); vi.stubEnv('NVIDIA_API_KEY', 'test-key');
+		vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { content: JSON.stringify({
+			reply: 'Laporan dapat dibaca oleh petugas yang ditugaskan dan admin.',
+			extracted_fields: {}, next_field: null, question: 'Boleh sebutkan nama lengkap Anda?'
+		}) } }] })));
+		const result = await makeChatTurn({ fields: empty, story: 'Saya mengalami ancaman.', lastAnswer: 'Siapa yang bisa membaca laporan?' });
+		expect(result.source).toBe('nvidia');
+		expect(result.reply).toContain('admin');
+		expect(result.question).toBe('Kapan kira-kira kejadian itu terjadi? Perkiraan waktu sudah cukup.');
+		expect(result.message).not.toContain('nama lengkap');
+		expect(result.fields).toEqual(empty);
+	});
+	it('mencatat penyebab fallback tanpa isi percakapan atau kredensial', async () => {
+		vi.stubEnv('AI_ENABLED', 'true'); vi.stubEnv('NVIDIA_API_KEY', 'private-test-key');
+		vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 429 })));
+		const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			const result = await makeChatTurn({ fields: empty, story: 'Cerita privat untuk pengujian.' });
+			expect(result.source).toBe('fallback');
+			expect(warning.mock.calls).toEqual([['AI chat fallback', { reason: 'provider_http', status: 429 }]]);
+		} finally { warning.mockRestore(); }
+	});
 	it('menolak kutipan buatan, ketidakpastian, dan lokasi saat ini', () => {
 		expect(extractQuotedFields(empty, { incidentTime: 'malam', incidentLocation: 'rumah', need: 'bantuan' }, 'Saya takut pulang malam, kejadiannya saya lupa kapan. Saya belum tahu bantuan yang saya perlukan. Sekarang saya di rumah.')).toEqual(empty);
 		expect(extractQuotedFields(empty, { incidentLocation: 'sekolah' }, 'Saya di rumah.')).toEqual(empty);
