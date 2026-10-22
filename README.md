@@ -29,6 +29,7 @@ The reporter, administrator/staff, and technical Word manuals are maintained sep
 
 - `/chat`: victim details, optional NIK (Indonesian national identification number), incident narrative, editable draft, privacy confirmation, and submission receipt with a copyable reference code.
 - AI conversation: one permitted follow-up topic at a time, optional skipping, additional narrative, and explicit reporter control over when to review the draft. NVIDIA requests redact recognizable identity patterns; this does not guarantee anonymization. Fallback guidance works without an AI provider.
+- AI assistance works both during and outside staff service hours until a staff handoff opens. Service hours control new staff-assistance requests, rather than disabling the AI conversation. Provider requests disable internal thinking for these short JSON responses so the limited completion budget is available for the answer.
 - `/petugas`: report inbox with search, filters, review notes, decisions, and reasons. Non-administrator staff can access assigned reports only.
 - `/petugas/percakapan`: live handoff, staff replies, and a private guidance panel. Suggestions enter the composer for editing and manual sending. Automatic AI replies pause while a handoff is open.
 - Staff guidance validates narrative, approximate time, general location, and requested help against actual reporter messages. It distinguishes missing details from explicit unknown answers. Collected fields feed the reporter's editable draft and later confirmed summary.
@@ -159,7 +160,7 @@ npm audit --audit-level=low
 
 Integration tests run native Convex functions through `convex-test` with isolated in-memory data. They cover authorization, expired/revoked sessions, shared rate limits, draft versions, submission idempotency, decisions, encrypted guidance, stale provider output, cancellation, and takeover during AI work. This is complemented by browser tests against an actual local Convex backend.
 
-The evaluation release was verified on **22 October 2026** with 70 unit tests, 18 Convex integration tests, Node and Vercel artifact builds, secret scans, and a hosted browser flow covering manual staff replies, draft confirmation, submission, decisions, identity access, Excel export, and logout. The dependency audit reported zero known vulnerabilities at that time. These checks are a release snapshot, not a guarantee of permanent security; rerun them after code or dependency changes.
+The evaluation release was verified on **22 October 2026** with 71 unit tests, 23 Convex integration tests, Node and Vercel artifact builds, secret scans, and a hosted browser flow covering manual staff replies, draft confirmation, submission, decisions, identity access, Excel export, and logout. The dependency audit reported zero known vulnerabilities at that time. These checks are a release snapshot, not a guarantee of permanent security; rerun them after code or dependency changes.
 
 For browser verification:
 

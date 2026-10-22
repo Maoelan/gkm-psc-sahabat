@@ -70,7 +70,7 @@ const PROJECT_FACTS = [
 	'Riwayat percakapan dapat dibuka petugas yang ditugaskan dan admin. Setiap pembukaan dicatat dalam audit.',
 	'NIK hanya dapat dibuka akun berwenang dengan peran admin. Daftar meja petugas tidak menampilkan NIK. NIK opsional dan boleh dikosongkan.',
 	'Pelapor dapat melewati pertanyaan, menambah cerita, memeriksa dan mengubah draf, memilih tidak dihubungi, serta menekan tombol Selesai untuk mengakhiri percakapan. AI tidak mengakhiri percakapan sendiri. Pelapor tidak wajib mengirim laporan.',
-	'Notifikasi WhatsApp hanya berisi pemberitahuan umum; tidak memuat nama, cerita, NIK, kontak, atau lampiran.',
+	'Notifikasi masih berupa antrean simulasi di aplikasi. Belum ada pengiriman WhatsApp nyata atau pesan otomatis ke pelapor.',
 	'AI tidak memberi diagnosis, nasihat hukum, opini pribadi, keputusan, janji, atau penilaian.',
 	'Lingkungan ini belum memenuhi syarat produksi; jangan menjanjikan keamanan atau kerahasiaan mutlak.'
 ].join('\n- ');
@@ -340,6 +340,7 @@ export async function makeChatTurn(input: ChatTurnInput): Promise<ChatTurnResult
 				],
 				temperature: 0.6,
 				max_tokens: 1024,
+				chat_template_kwargs: { enable_thinking: false },
 				stream: false
 			}),
 			signal: AbortSignal.timeout(15_000)

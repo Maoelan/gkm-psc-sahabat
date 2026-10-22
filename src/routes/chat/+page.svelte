@@ -305,7 +305,8 @@
 		if (message.sender === 'staff') return 'Petugas LAPOR AMAN';
 		if (message.sender === 'service' || message.source === 'handoff') return 'LAPOR AMAN';
 		if (message.source === 'guide') return 'Panduan LAPOR AMAN';
-		if (message.source === 'fallback' && serviceMode === 'ai' && aiEnabled) {
+		if (message.source === 'nvidia' || message.source === 'ai') return 'Asisten AI';
+		if (message.source === 'fallback' && aiEnabled) {
 			return 'Panduan LAPOR AMAN';
 		}
 		return assistantLabel;
@@ -1219,7 +1220,7 @@
 						>
 							<strong>
 								{messageLabel(message)}
-								{#if message.source === 'fallback' && serviceMode === 'ai' && aiEnabled}
+								{#if message.source === 'fallback' && aiEnabled}
 									<span class="message-source">Panduan terstruktur</span>
 								{/if}
 							</strong>

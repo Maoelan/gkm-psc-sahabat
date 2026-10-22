@@ -53,10 +53,10 @@ export async function POST({ cookies, request, locals }) {
     need: parsed.data.need,
   };
   const handoffAlreadyOpen = await hasOpenHandoff(session.id);
-  const history =
-    session.mode === "ai" ? await recentChatHistory(session.id) : [];
+  const automaticChat = session.mode !== "unavailable" && !handoffAlreadyOpen;
+  const history = automaticChat ? await recentChatHistory(session.id) : [];
   const result =
-    session.mode === "ai" && !handoffAlreadyOpen
+    automaticChat
       ? await makeChatTurn({
           fields,
           story: parsed.data.story,

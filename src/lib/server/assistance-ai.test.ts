@@ -9,6 +9,15 @@ const staff = (id: string, body: string): HandoffThreadMessage => ({ ...user(id,
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe('pendamping petugas', () => {
+	it('meminta JSON tanpa reasoning agar hasil panduan tidak habis di token internal', async () => {
+		vi.stubEnv('AI_ENABLED', 'true'); vi.stubEnv('NVIDIA_API_KEY', 'test-key');
+		const provider = vi.fn(async () => Response.json({ choices: [{ message: { content: '{"fields":{}}' } }] }));
+		vi.stubGlobal('fetch', provider);
+		const result = await makeStaffAssistance([user('1', 'Saya mengalami ancaman dari orang yang saya kenal.')]);
+		expect(result.source).toBe('nvidia');
+		const request = JSON.parse((provider.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+		expect(request.chat_template_kwargs.enable_thinking).toBe(false);
+	});
 	it('tidak mengubah persetujuan singkat menjadi waktu atau cerita kejadian', () => {
 		const result = parseStaffAssistance(JSON.stringify({ fields: { incidentTime: { quote: 'Iya', messageId: '1' }, story: { quote: 'Iya', messageId: '1' } } }), [user('1', 'Iya')]);
 		expect(result.fields.incidentTime.status).toBe('missing');

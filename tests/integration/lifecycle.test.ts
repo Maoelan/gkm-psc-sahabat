@@ -44,9 +44,9 @@ function cookieJar() {
     delete: (n: string) => values.delete(n),
   } as unknown as Cookies;
 }
-async function reporter() {
+async function reporter(mode: "ai" | "operator" = "ai") {
   const cookies = cookieJar();
-  return { cookies, session: await sessions.createSession(cookies, "ai") };
+  return { cookies, session: await sessions.createSession(cookies, mode) };
 }
 async function userMessage(sessionId: string) {
   await t.mutation(api.chat.saveTurn, {
@@ -457,8 +457,59 @@ describe("Convex lifecycle", () => {
       await t.run((ctx) => ctx.db.query("assistance").collect()),
     ).toHaveLength(0);
   });
-  it("does not save an AI response after the reporter ends the session", async () => {
-    const { session, cookies } = await reporter();
+  it.each(["ai", "operator"] as const)("answers service questions with AI and retained history in %s mode", async (mode) => {
+    const { session, cookies } = await reporter(mode);
+    await userMessage(session.id);
+    vi.stubEnv("AI_ENABLED", "true");
+    vi.stubEnv("NVIDIA_API_KEY", "test-key");
+    const provider = vi.fn(async () => Response.json({ choices: [{ message: { content: JSON.stringify({
+      reply: "Laporan dapat dibaca petugas yang ditugaskan dan admin.",
+      next_field: "incident_time",
+      question: "Kapan kira-kira kejadian itu terjadi?",
+      extracted_fields: {}
+    }) } }] }));
+    vi.stubGlobal("fetch", provider);
+    const response = await turn({
+      cookies,
+      request: new Request("http://localhost/api/chat/turn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-csrf-token": session.csrfToken },
+        body: JSON.stringify({ story: content.story, userMessage: "Siapa yang bisa membaca laporan saya?" })
+      }),
+      locals: { requestId: randomUUID() }
+    } as Parameters<typeof turn>[0]);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ source: "nvidia", message: expect.stringContaining("admin"), fields: { incidentTime: "" } });
+    expect(provider).toHaveBeenCalledOnce();
+    const request = JSON.parse((provider.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(request.chat_template_kwargs.enable_thinking).toBe(false);
+    expect(JSON.parse(request.messages[1].content).recent_messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "user", body: "Cerita sintetis di rumah." })
+    ]));
+  });
+  it("does not call the public AI while staff assistance is active during service hours", async () => {
+    const { session, cookies } = await reporter("operator");
+    await userMessage(session.id);
+    await handoffs.takeoverChatSession(staff, session.id);
+    vi.stubEnv("AI_ENABLED", "true");
+    vi.stubEnv("NVIDIA_API_KEY", "test-key");
+    const provider = vi.fn();
+    vi.stubGlobal("fetch", provider);
+    const response = await turn({
+      cookies,
+      request: new Request("http://localhost/api/chat/turn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-csrf-token": session.csrfToken },
+        body: JSON.stringify({ story: content.story, userMessage: "Ada keterangan tambahan." })
+      }),
+      locals: { requestId: randomUUID() }
+    } as Parameters<typeof turn>[0]);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "handoff_open", accepted: true });
+    expect(provider).not.toHaveBeenCalled();
+  });
+  it.each(["ai", "operator"] as const)("does not save an AI response after the reporter ends a %s session", async (mode) => {
+    const { session, cookies } = await reporter(mode);
     const provider = deferredProvider();
     const response = turn({
       cookies,
@@ -483,8 +534,8 @@ describe("Convex lifecycle", () => {
       await t.run((ctx) => ctx.db.query("messages").collect()),
     ).toHaveLength(0);
   });
-  it("forwards the reporter message when staff takes over during provider work", async () => {
-    const { session, cookies } = await reporter();
+  it.each(["ai", "operator"] as const)("forwards the reporter message when staff takes over during provider work in %s mode", async (mode) => {
+    const { session, cookies } = await reporter(mode);
     await userMessage(session.id);
     const provider = deferredProvider();
     const response = turn({
