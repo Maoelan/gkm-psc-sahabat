@@ -2,11 +2,28 @@
 
 A reporting portal for GKM PSC SAHABAT, UPT Puskesmas Suranadi. Reporters describe incidents, request staff assistance, review drafts, and submit reports. Staff review assigned reports and record decisions; administrators access summaries and identity records.
 
-This branch uses **SvelteKit 3, Svelte 5, and Convex**, with a **Vercel Node.js 24** deployment target. A Node adapter remains available for local production tests. The interface is in Indonesian; development documentation is in English.
+The application uses **SvelteKit 3, Svelte 5, and Convex**, with a **Vercel Node.js 24** deployment target. A Node adapter remains available for local production tests. The interface and user manuals are in Indonesian; this README is in English.
 
 Use this application for evaluation with **synthetic data only**. This is not an operational victim-reporting service.
 
 Evaluation portal: [lapor-aman-evaluation.vercel.app](https://lapor-aman-evaluation.vercel.app). Staff sign in at `/masuk`; passwords are distributed privately. The deployed backend belongs to the separate `lapor-aman-evaluation` Convex project.
+
+## Current evaluation deployment
+
+| Component | Current configuration |
+| --- | --- |
+| Public portal | [lapor-aman-evaluation.vercel.app](https://lapor-aman-evaluation.vercel.app) |
+| Staff sign-in | [Staff sign-in](https://lapor-aman-evaluation.vercel.app/masuk) |
+| Hosting | Vercel project `lapor-aman-evaluation`, Node.js 24 |
+| Persistence | Native Convex functions and database in a separate evaluation project |
+| AI assistance | Server-side NVIDIA requests with validated results and fallback guidance |
+| Notifications | Outbox simulation; no external WhatsApp delivery |
+| Releases | Manual deployment; GitHub pushes do not automatically publish the application |
+| Data | Synthetic evaluation records; the former local PostgreSQL database was not imported |
+
+The portal and backend run in the cloud and do not depend on a developer laptop staying on. Vercel's Production environment is used for the stable **evaluation** URL; that platform label does not mean this application is approved for operational use with real victim data. Preview deployments require their own backend, credentials, and encryption keys before use.
+
+The reporter, administrator/staff, and technical Word manuals are maintained separately from the public repository. Their screenshots use synthetic data. Credentials and private deployment configuration are not included in those manuals.
 
 ## Reporting and staff workflows
 
@@ -19,7 +36,7 @@ Evaluation portal: [lapor-aman-evaluation.vercel.app](https://lapor-aman-evaluat
 - `/admin/nik`: administrator identity directory with audited access. Transcript access, guidance access, reviews, decisions, and handoff actions are also audited.
 - Convex mutations handle draft versions, idempotent submission, handoff transitions, final decisions, and shared rate-limit counters. A message sequence check rejects stale AI results and prevents late results from overwriting finalized guidance.
 - Sensitive content remains AES-256-GCM encrypted before storage in Convex. NIK uses a separate encryption key. Decryption and provider calls happen in SvelteKit server code.
-- Evaluation notifications are **outbox-only**: generic pending events are recorded, and no WhatsApp messages are sent. The former PostgreSQL worker is not part of this branch.
+- Evaluation notifications are **outbox-only**: generic pending events are recorded, and no WhatsApp messages are sent. The former PostgreSQL worker is no longer used.
 
 Service hours use **WITA (UTC+8)**: Monday–Thursday 08:00–14:00, Friday 08:00–11:00, Saturday 08:00–12:30. The schedule is stored in Convex. Outside these hours, reporting uses AI mode. Staff can take over an existing conversation independently of reporter request hours.
 
@@ -89,6 +106,8 @@ The seed updates the three demo accounts and fills missing service schedules. Ex
 
 All three accounts include administrator access to demonstrate supervisor workflows. They do not demonstrate separation of duties; provision narrower accounts for permission evaluation. Passwords come from the private environment file and are never published in the repository or public interface.
 
+For the hosted evaluation, sign in with username `admin` and the password supplied privately by the project owner. There is no shared default password. Local and hosted environments can have different credentials. Account provisioning and report assignment currently require technical administration; there is no account-management interface or self-service password recovery.
+
 ### Local production build
 
 ```sh
@@ -109,7 +128,7 @@ Without `VERCEL=1` or `DEPLOY_TARGET=vercel`, builds use the Node adapter. Set `
 
 The browser calls same-origin SvelteKit endpoints. Convex calls use a separate server credential and revalidate stored staff sessions, roles, reporter state, and assignments. Do not expose `APPLICATION_SERVER_KEY`, encryption keys, provider credentials, or deploy keys with a `PUBLIC_` prefix. Convex CLI login and deploy credentials do not belong in the browser or application bundle.
 
-Use independent backend deployments, data, passwords, and encryption keys for preview and stable evaluation environments. PostgreSQL migrations, credentials, dependencies, and the notification worker were removed from this branch; the previous implementation remains in Git history on `codex/development`. Existing local PostgreSQL data is not modified or copied.
+Use independent backend deployments, data, passwords, and encryption keys for preview and stable evaluation environments. PostgreSQL migrations, credentials, dependencies, and the notification worker were removed from the current implementation; the previous PostgreSQL baseline remains in Git history at commit `584e915`. Existing local PostgreSQL data is not modified or copied.
 
 On Windows, a local Vercel adapter build may fail if directory symlinks are unavailable. The Linux CI job checks Vercel artifacts, and Vercel performs the actual cloud build; do not disable operating-system protections to work around local artifact generation.
 
@@ -117,9 +136,11 @@ Official references: [SvelteKit Vercel adapter](https://svelte.dev/docs/kit/adap
 
 ## Development and releases
 
-- `codex/vercel-convex`: backend migration and evaluation deployment work.
-- `codex/development`: development integration and the pre-migration PostgreSQL baseline until this branch is reviewed and integrated.
+- `development`: shared development and integration branch.
+- `feature/vercel-convex`: Convex migration and evaluation release work.
 - `main`: protected stable branch. Pull requests require passing `secret-scan` and `integration` checks, an approving review from another person, resolved conversations, and an up-to-date branch. Protection applies to administrators; force pushes and deletion are blocked.
+
+Release changes through a pull request to `main`, then synchronize `development` with the merged release before starting the next change. Deployment is a separate operation: merging a pull request does not by itself redeploy Vercel or Convex in the current setup.
 
 The [Security workflow](.github/workflows/security.yml) checks types, unit tests, Convex integration tests, Node and Vercel builds, secrets, and dependency advisories. It needs no cloud credentials for these tests.
 
@@ -137,6 +158,8 @@ npm audit --audit-level=low
 ```
 
 Integration tests run native Convex functions through `convex-test` with isolated in-memory data. They cover authorization, expired/revoked sessions, shared rate limits, draft versions, submission idempotency, decisions, encrypted guidance, stale provider output, cancellation, and takeover during AI work. This is complemented by browser tests against an actual local Convex backend.
+
+The evaluation release was verified on **22 October 2026** with 70 unit tests, 18 Convex integration tests, Node and Vercel artifact builds, secret scans, and a hosted browser flow covering manual staff replies, draft confirmation, submission, decisions, identity access, Excel export, and logout. The dependency audit reported zero known vulnerabilities at that time. These checks are a release snapshot, not a guarantee of permanent security; rerun them after code or dependency changes.
 
 For browser verification:
 
