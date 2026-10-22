@@ -1,83 +1,94 @@
 # PSC SAHABAT — LAPOR AMAN
 
-A reporting portal for PSC SAHABAT, UPT Puskesmas Suranadi, serving its health-center catchment area. The program identity is “Pengaduan, Pendampingan dan Rujukan Terpadu bagi Perempuan dan Anak Korban Kekerasan,” with the motto “Satu laporan, satu pendamping, satu jalur perlindungan.” Reporters describe incidents, request staff assistance, review drafts, and submit reports. Staff review assigned reports and record decisions; administrators access summaries and identity records.
+A reporting portal for women and children affected by violence in the service area of **UPT Puskesmas Suranadi**. PSC SAHABAT provides a coordinated reporting, assistance, and referral program. Its motto translates to **“One report, one companion, one pathway to protection.”**
 
-The application uses **SvelteKit 3, Svelte 5, and Convex**, with a **Vercel Node.js 24** deployment target. A Node adapter remains available for local production tests. The interface and user manuals are in Indonesian; this README is in English.
+Reporters describe an incident, review an editable draft, choose whether staff may contact them, and confirm submission. Staff handle conversations, review assigned reports, and record decisions. Administrators can review summaries, reveal identity information, export records, and delete reports with confirmation.
 
-Use this application for evaluation with **synthetic data only**. This is not an operational victim-reporting service.
+**This deployment is for team evaluation with synthetic data only. It is not an operational victim-reporting or emergency service.** The application interface is in Indonesian. This README is written entirely in English; route names, account identifiers, and worksheet names retain their application values.
 
-Evaluation portal: [lapor-aman-evaluation.vercel.app](https://lapor-aman-evaluation.vercel.app). Staff sign in at `/masuk`; passwords are distributed privately. The deployed backend belongs to the separate `lapor-aman-evaluation` Convex project.
+[Evaluation website](https://lapor-aman-evaluation.vercel.app/) · [Staff sign-in](https://lapor-aman-evaluation.vercel.app/masuk)
 
-## Current evaluation deployment
+## Technology and hosting
 
-| Component | Current configuration |
+| Component | Implementation |
 | --- | --- |
-| Public portal | [lapor-aman-evaluation.vercel.app](https://lapor-aman-evaluation.vercel.app) |
-| Staff sign-in | [Staff sign-in](https://lapor-aman-evaluation.vercel.app/masuk) |
-| Hosting | Vercel project `lapor-aman-evaluation`, Node.js 24 |
-| Persistence | Native Convex functions and database in a separate evaluation project |
-| AI assistance | Server-side NVIDIA requests with validated results and fallback guidance |
-| Notifications | In-app staff inbox alerts; outbox simulation without external WhatsApp delivery |
-| Releases | Manual deployment; GitHub pushes do not automatically publish the application |
-| Data | Synthetic evaluation records; the former local PostgreSQL database was not imported |
+| Application | SvelteKit 3, Svelte 5, TypeScript |
+| Database and transactions | Native Convex functions and database |
+| Website hosting | Vercel, Node.js 24 |
+| Evaluation project | `lapor-aman-evaluation` on Vercel and Convex |
+| AI provider | Server-side NVIDIA requests with validation and fallback questions |
+| Encryption | AES-256-GCM before storage; a separate key for national identification numbers |
+| Notifications | In-app staff alerts and a simulated outbox; no WhatsApp delivery |
+| Website releases | Automatic Vercel deployment from `main` |
+| Backend releases | Separate Convex deployment before merging changes that require new backend functions |
 
-The portal and backend run in the cloud and do not depend on a developer laptop staying on. Vercel's Production environment is used for the stable **evaluation** URL; that platform label does not mean this application is approved for operational use with real victim data. Preview deployments require their own backend, credentials, and encryption keys before use.
+The hosted website and database work independently of the developer's computer. Vercel's Production label identifies the stable evaluation URL; it does not authorize use with real victim information. The former PostgreSQL database was not imported.
 
-The reporter, administrator/staff, and technical Word manuals are maintained separately from the public repository. Existing editions precede the PSC SAHABAT interface revision; their screenshots need refreshing before redistribution. Their screenshots use synthetic data. Credentials and private deployment configuration are not included in those manuals.
+## User workflows
 
-## Reporting and staff workflows
+| Route | Purpose |
+| --- | --- |
+| `/` | Program identity, motto, reporting overview, institutional affiliation, service area, and first-visit information |
+| `/edukasi` | Education about violence against women and children, six reporting categories, and official legal references |
+| `/panduan` | Reporting instructions, privacy information, and immediate-help guidance |
+| `/chat` | Incident narrative, optional victim information, editable draft, contact permission, submission, and reference code |
+| `/masuk` | Staff authentication |
+| `/petugas` | Assigned report inbox, search, filters, review notes, decisions, and integrated identity access |
+| `/petugas/percakapan` | Staff takeover, direct replies, and private assistance |
+| `/rekap` | Administrator summaries, report details, identity access, and Excel export |
+| `/admin/nik` | Legacy route redirecting to `/rekap` |
 
-- `/`: PSC SAHABAT identity, program motto, Puskesmas affiliation, service scope, and a first-visit information dialog. The Puskesmas logo remains in the institutional footer; the PSC SAHABAT vector emblem also serves as the favicon.
-- `/edukasi`: a separate education page covering six groups from the supplied KTPA/TPPO material: physical, psychological, sexual, neglect, trafficking, and exploitation. Legal references link to official sources. This page does not determine legal classifications for individual cases.
-- `/chat`: chronology first, with optional and encouraged victim details, optional NIK, suspected violence types, prior coordination with other agencies, editable draft, privacy confirmation, and a copyable submission reference. Additional victim fields include date of birth, parents, address, gender, education, occupation, marital status, and pregnancy. Form identity fields are encrypted with report content and are not sent to AI.
-- Contact consent is requested after the narrative. If willing to be contacted, the reporter supplies their own safe number and contact limits, including when reporting on another person's behalf. Contact information is revealed through an audited action.
-- AI conversation: one permitted follow-up topic at a time, optional skipping, additional narrative, and explicit reporter control over when to review the draft. NVIDIA requests redact recognizable identity patterns; this does not guarantee anonymization. Fallback guidance works without an AI provider.
-- AI assistance works both during and outside staff service hours until a staff handoff opens. Service hours control new staff-assistance requests, rather than disabling the AI conversation. Provider requests disable internal thinking for these short JSON responses so the limited completion budget is available for the answer.
-- `/petugas`: report inbox with search, filters, review notes, decisions, and reasons. Non-administrator staff can access assigned reports only.
-- `/petugas/percakapan`: live handoff, staff replies, and a private guidance panel showing one suggested question; completeness details are collapsed by default. Suggestions enter the composer for editing and manual sending. Automatic AI replies pause while a handoff is open.
-- Staff guidance validates narrative, approximate time, general location, and requested help against actual reporter messages. It distinguishes missing details from explicit unknown answers. Collected fields feed the reporter's editable draft and later confirmed summary.
-- `/rekap`: administrator summary and Excel export. `Rekap` excludes NIK; `Identitas` includes it for authorized administrators.
-- Identity access is integrated into report details and recap; the legacy `/admin/nik` URL redirects to `/rekap`. Transcript access, guidance access, reviews, decisions, contact reveal, identity reveal, and handoff actions are audited.
-- Administrators may permanently delete a report by entering its exact reference and a reason. The atomic operation removes its recap entry, identity, reporter session, drafts, messages, handoffs, assistance, reviews, and outbox events. An audit record with an encrypted reason remains. Previously downloaded files are unaffected.
-- Staff inbox notifications poll every 12 seconds while the page is visible, expose only submission metadata, and follow assignment permissions. Read status is local to the browser and account.
-- Convex mutations handle draft versions, idempotent submission, handoff transitions, final decisions, and shared rate-limit counters. A message sequence check rejects stale AI results and prevents late results from overwriting finalized guidance.
-- Sensitive content remains AES-256-GCM encrypted before storage in Convex. NIK uses a separate encryption key. Decryption and provider calls happen in SvelteKit server code.
-- Evaluation notifications are **outbox-only**: generic pending events are recorded, and no WhatsApp messages are sent. The former PostgreSQL worker is no longer used.
+### Reporting
 
-Service hours use **WITA (UTC+8)**: Monday–Thursday 08:00–14:00, Friday 08:00–11:00, Saturday 08:00–12:30. The schedule is stored in Convex. Outside these hours, reporting uses AI mode. Staff can take over an existing conversation independently of reporter request hours.
+Victim details are optional and encouraged when known and safe to provide. Available fields include name, date of birth, parent or guardian, address, gender, education, occupation, marital status, pregnancy, and national identification number (NIK). Reporters can select suspected violence categories and record whether another agency has already been involved. These selections support initial reporting and do not establish a legal finding.
 
-## Local setup
+The six categories follow the supplied KTPA/TPPO training material: physical violence, psychological violence, sexual violence, neglect, human trafficking, and exploitation. The education page links to official references for domestic violence, trafficking, child protection, and sexual violence legislation. No unverified service contacts, village lists, or real victim records are supplied.
 
-Requirements: Node.js **24** (the framework minimum is 22.17), npm, and a Convex local or cloud development deployment. Python and Playwright Chromium are needed only for browser tests.
+Chat focuses on chronology, approximate incident time, general location, and requested assistance. Reporters can skip unknown details, add information, edit the draft, and decide whether to submit. Form identity fields are encrypted and excluded from AI input. Narrative redaction is best effort and does not guarantee anonymity.
+
+Contact permission is requested during final review. A reporter who agrees to contact must provide their own safe phone number and may add timing or contact restrictions. This also applies when reporting on another person's behalf. A report can be submitted without contact permission.
+
+### Staff and administrator actions
+
+Non-administrator staff can access assigned reports only. Administrators can access all reports. Private assistance shows one suggested question at a time, with completeness details collapsed by default. A suggestion enters the reply box for editing and must be sent manually. Automatic AI replies pause during staff takeover.
+
+Collected facts must be grounded in actual reporter messages. Unknown answers remain distinguishable from missing information. Reporter review remains necessary before a draft becomes a submitted report.
+
+NIK and permitted contact details can be revealed through audited actions within a report. The Excel export has a summary worksheet named `Rekap` without NIK and a restricted worksheet named `Identitas` containing identity information and additional fields. Downloaded files remain outside application access controls.
+
+Administrators can permanently delete a report by entering its exact reference and a reason. One transaction removes the report, identity, reporter session, drafts, messages, handoffs, assistance, reviews, and outbox records. An audit entry with an encrypted deletion reason remains. Previously downloaded files are unaffected.
+
+In-app notifications poll every 12 seconds while the staff page is visible. They use submission metadata and respect assignment permissions. Read status is stored locally per browser and account. External message delivery is not implemented.
+
+Staff service hours use **WITA (UTC+8)**: Monday–Thursday 08:00–14:00, Friday 08:00–11:00, and Saturday 08:00–12:30. Reports and AI assistance remain available outside these hours. Staff can take over an existing conversation independently of the hours for new assistance requests.
+
+## Local development
+
+Requirements: **Node.js 24**, npm, and a local or cloud Convex development deployment. Python, Playwright, and Chromium are required only for browser tests.
 
 ```powershell
 npm ci
 Copy-Item .env.example .env
-```
-
-Start the Convex development backend in a separate terminal:
-
-```sh
 npm run convex:dev
 ```
 
-Follow the CLI configuration prompts. Convex supports local anonymous development as well as signed-in cloud development. Keep this command running when using a local backend. CLI-generated `.env.local` selects the Convex deployment; the SvelteKit server reads its connection from `CONVEX_URL` in `.env`.
+Keep the Convex development process running in a separate terminal when using a local backend. The CLI-generated `.env.local` selects the Convex deployment for CLI commands. Application commands load `.env`; set its `CONVEX_URL` to the intended backend.
 
-Configure `.env` using [.env.example](.env.example):
+Configure the following private variables using [.env.example](.env.example):
 
 | Variable | Purpose |
 | --- | --- |
-| `CONVEX_URL` | Server-only backend URL; local URL printed by the CLI or an HTTPS cloud URL |
-| `APPLICATION_SERVER_KEY` | At least 32 random bytes encoded as Base64URL; the same value must exist in Convex |
-| `REPORT_DATA_KEY` | Independent 32-byte Base64 AES key for report and supporting content |
-| `NIK_DATA_KEY` | Separate 32-byte Base64 AES key for NIK |
-| `PUBLIC_BASE_URL` | Local or stable HTTPS canonical origin; read during build |
-| `AI_ENABLED` | `false` for fallback-only evaluation; `true` to enable configured NVIDIA requests |
-| `NVIDIA_API_KEY` | Optional server-only provider credential |
+| `CONVEX_URL` | Server-only local or HTTPS cloud backend URL |
+| `APPLICATION_SERVER_KEY` | Random server credential shared by the application and Convex |
+| `REPORT_DATA_KEY` | Independent 32-byte Base64 encryption key for report content |
+| `NIK_DATA_KEY` | Separate 32-byte Base64 encryption key for NIK |
+| `PUBLIC_BASE_URL` | Canonical application origin, read during build |
+| `AI_ENABLED` | `true` to use configured NVIDIA requests; `false` for fallback-only development |
+| `NVIDIA_API_KEY` | Server-only provider credential |
 | `NVIDIA_MODEL` | Default: `nvidia/nemotron-3-ultra-550b-a55b` |
-| `DEMO_STAFF_PETUGAS_PASSWORD` | Unique demo password, at least 14 characters |
-| `DEMO_STAFF_BIDAN_PASSWORD` | Unique demo password, at least 14 characters |
-| `DEMO_STAFF_ADMIN_PASSWORD` | Unique demo password, at least 14 characters |
+| `DEMO_STAFF_PETUGAS_PASSWORD` | Unique demo password of at least 14 characters |
+| `DEMO_STAFF_BIDAN_PASSWORD` | Unique demo password of at least 14 characters |
+| `DEMO_STAFF_ADMIN_PASSWORD` | Unique demo password of at least 14 characters |
 | `WHATSAPP_PROVIDER` | Keep `outbox` for evaluation |
 
 Generate the application server key privately:
@@ -86,13 +97,13 @@ Generate the application server key privately:
 node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64url'))"
 ```
 
-Generate each encryption key separately using the same command with `base64` instead of `base64url`. Save the values in your private environment file. Set the matching server key on the selected Convex deployment without placing it in shell history:
+Generate each encryption key separately with `base64` instead of `base64url`. Set the matching application server key on the selected Convex deployment using an interactive prompt:
 
 ```sh
 npx convex env set APPLICATION_SERVER_KEY
 ```
 
-Then prepare accounts and schedules, verify connectivity, and start the app:
+Then seed accounts, check connectivity, and start the application:
 
 ```sh
 npm run db:seed
@@ -100,19 +111,17 @@ npm run db:check
 npm run dev
 ```
 
-The seed updates the three demo accounts and fills missing service schedules. Existing reports are preserved; it does not import the former PostgreSQL database. Keep encryption keys stable for each environment: changing them without migration makes stored content unreadable.
+The seed updates demo accounts and fills missing schedules while preserving existing reports. Keep encryption keys stable: replacing them without migration makes existing encrypted content unreadable.
 
-### Demo accounts
+### Evaluation accounts
 
-| Username | Seeded roles |
+| Username | Seeded role identifiers |
 | --- | --- |
 | `petugas` | `petugas`, `admin` |
 | `bidan` | `bidan_pic`, `admin` |
 | `admin` | `admin` |
 
-All three accounts include administrator access to demonstrate supervisor workflows. They do not demonstrate separation of duties; provision narrower accounts for permission evaluation. Passwords come from the private environment file and are never published in the repository or public interface.
-
-For the hosted evaluation, sign in with username `admin` and the password supplied privately by the project owner. There is no shared default password. Local and hosted environments can have different credentials. Account provisioning and report assignment currently require technical administration; there is no account-management interface or self-service password recovery.
+All seeded accounts include administrator access to demonstrate supervisor workflows. Use narrower accounts when evaluating separation of duties. Passwords are provided privately by the project owner; there is no public default password. Account provisioning, assignments, and password recovery currently require technical administration.
 
 ### Local production build
 
@@ -121,34 +130,38 @@ npm run build
 npm run start
 ```
 
-Without `VERCEL=1` or `DEPLOY_TARGET=vercel`, builds use the Node adapter. Set `PUBLIC_BASE_URL` before building and set runtime `PORT` to match that URL. The legacy adapter `ORIGIN` variable is not used. `/chat?mode=operator` overrides service mode for development tests only, never production builds.
+Builds use the Node adapter unless `VERCEL=1` or `DEPLOY_TARGET=vercel` is set. Configure `PUBLIC_BASE_URL` before building and a matching runtime `PORT`. The legacy `ORIGIN` variable is not used. The `/chat?mode=operator` override is available only in development.
 
-## Vercel and Convex deployment
+## Branches and automatic deployment
 
-1. Sign in with `npx convex login` and create/select a separate evaluation project using `npx convex dev --configure new`. If device polling times out, use `npx convex login --login-flow paste` and enter its token directly in the terminal.
-2. Run `npm run convex:deploy` to publish the functions and schema to that project's production deployment. Set its `APPLICATION_SERVER_KEY` using `npx convex env set APPLICATION_SERVER_KEY --prod`.
-3. Create/link a Vercel project. Set server-only environment variables for `CONVEX_URL`, `APPLICATION_SERVER_KEY`, `REPORT_DATA_KEY`, `NIK_DATA_KEY`, optional NVIDIA configuration, and `WHATSAPP_PROVIDER=outbox`. Use fresh keys and synthetic fixtures for this environment.
-4. Seed accounts using the target deployment URL and its matching private configuration. Never point a seed or test command at an unrelated environment.
-5. Deploy through Vercel. `VERCEL=1` selects `@sveltejs/adapter-vercel` with Node.js 24 and a 60-second function duration. Preview origins derive from `VERCEL_URL`; stable deployments use the configured HTTPS origin or the Vercel project URL.
-6. Verify login, ownership and role checks, reporting, handoff, cancellation, draft edits, decisions, identity access, and export at the deployed URL before inviting evaluators.
+- `main`: stable release branch and Vercel Production branch.
+- `development`: shared integration branch.
+- `feature/vercel-convex`: migration and evaluation feature work.
 
-The browser calls same-origin SvelteKit endpoints. Convex calls use a separate server credential and revalidate stored staff sessions, roles, reporter state, and assignments. Do not expose `APPLICATION_SERVER_KEY`, encryption keys, provider credentials, or deploy keys with a `PUBLIC_` prefix. Convex CLI login and deploy credentials do not belong in the browser or application bundle.
+GitHub is connected to the Vercel project. [vercel.json](vercel.json) enables automatic Git deployments for `main` and disables them for other branches. A push to a development branch runs GitHub checks but does not publish the stable website. After an approved pull request is merged into `main`, Vercel builds that commit and updates the evaluation URL. A failed build does not replace the last successful deployment.
 
-Use independent backend deployments, data, passwords, and encryption keys for preview and stable evaluation environments. PostgreSQL migrations, credentials, dependencies, and the notification worker were removed from the current implementation; the previous PostgreSQL baseline remains in Git history at commit `584e915`. Existing local PostgreSQL data is not modified or copied.
+The `main` protection policy requires the `secret-scan` and `integration` checks, one approving review from another person, resolved review conversations, and an up-to-date branch. It applies to administrators and blocks force pushes and branch deletion. Repository visibility is public so this protection can be enforced on GitHub Free. Do not commit credentials or evaluation records to the repository.
 
-On Windows, a local Vercel adapter build may fail if directory symlinks are unavailable. The Linux CI job checks Vercel artifacts, and Vercel performs the actual cloud build; do not disable operating-system protections to work around local artifact generation.
+Convex releases are separate from Vercel Git deployments. When a change modifies native backend functions or schemas, deploy a compatible Convex backend before merging the website release:
 
-Official references: [SvelteKit Vercel adapter](https://svelte.dev/docs/kit/adapter-vercel), [Convex deployment](https://docs.convex.dev/production/hosting/vercel), [Convex environments](https://docs.convex.dev/production/multiple-deployments).
+```sh
+npm run convex:deploy
+```
 
-## Development and releases
+Verify the deployment target before running that command. The evaluation backend must use its matching server credential and encryption keys. Production-only credentials must not be copied into preview environments. Preview deployments remain disabled until an independent backend, credentials, and keys are configured.
 
-- `development`: shared development and integration branch.
-- `feature/vercel-convex`: Convex migration and evaluation release work.
-- `main`: protected stable branch. Pull requests require passing `secret-scan` and `integration` checks, an approving review from another person, resolved conversations, and an up-to-date branch. Protection applies to administrators; force pushes and deletion are blocked.
+For a new environment:
 
-Release changes through a pull request to `main`, then synchronize `development` with the merged release before starting the next change. Deployment is a separate operation: merging a pull request does not by itself redeploy Vercel or Convex in the current setup.
+1. Sign in with `npx convex login` and select or create a separate evaluation project.
+2. Deploy the Convex functions and set `APPLICATION_SERVER_KEY` on the target deployment.
+3. Create or link the Vercel project and configure its server-only runtime variables.
+4. Seed synthetic accounts using the intended backend and matching private configuration.
+5. Connect GitHub, choose `main` as the Production branch, and apply the branch policy.
+6. Verify reporting, staff takeover, decisions, identity access, exports, and deletion before inviting evaluators.
 
-The [Security workflow](.github/workflows/security.yml) checks types, unit tests, Convex integration tests, Node and Vercel builds, secrets, and dependency advisories. It needs no cloud credentials for these tests.
+Vercel uses Node.js 24 and a 60-second function duration. On Windows, local Vercel artifact generation can require directory symlink privileges; Linux CI and the Vercel cloud build verify that target. Do not change operating-system protections to generate local artifacts.
+
+References: [Vercel Git deployment](https://vercel.com/docs/git), [Vercel branch configuration](https://vercel.com/docs/project-configuration/git-configuration), [SvelteKit Vercel adapter](https://svelte.dev/docs/kit/adapter-vercel), [Convex deployment](https://docs.convex.dev/production/hosting/vercel), [GitHub branch protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches).
 
 ## Verification
 
@@ -157,17 +170,16 @@ npm run check
 npm run check:convex
 npm test
 npm run test:integration
-npm run db:check
 npm run build
 npm run security:scan -- --history --staged --client
 npm audit --audit-level=low
 ```
 
-Integration tests run native Convex functions through `convex-test` with isolated in-memory data. They cover authorization, expired/revoked sessions, shared rate limits, draft versions, submission idempotency, decisions, encrypted guidance, stale provider output, cancellation, and takeover during AI work. This is complemented by browser tests against an actual local Convex backend.
+The interface revision was verified on **22 October 2026** with 76 unit tests, 27 native Convex integration tests, type checks, Node and Vercel builds, secret scans, and a dependency audit reporting zero known vulnerabilities. Development and production browser flows covered screen widths from 320 to 1440 pixels. Hosted verification covered staff takeover, manual replies, confirmed submission, optional fields, identity access, export, notifications, and deletion of its own synthetic test report. A separate live NVIDIA check verified that the AI explains optional victim information correctly.
 
-The evaluation release was verified on **22 October 2026** with 76 unit tests, 27 Convex integration tests, Node and Vercel artifact builds, secret scans, and a hosted browser flow covering manual staff replies, draft confirmation, submission, decisions, identity access, Excel export, and logout. The dependency audit reported zero known vulnerabilities at that time. These checks are a release snapshot, not a guarantee of permanent security; rerun them after code or dependency changes.
+These checks are a dated release snapshot, not a guarantee of permanent security. Rerun the appropriate checks after changes.
 
-For browser verification:
+### Browser tests
 
 ```sh
 python -m pip install playwright
@@ -175,9 +187,9 @@ python -m playwright install chromium
 npm run test:e2e
 ```
 
-The test runner creates a separate local Convex deployment in the operating system's temporary directory, random credentials and encryption keys, and temporary accounts. It does not reset the application backend. Ports default to 3212/3213 for Convex and 5175 for SvelteKit. Override `E2E_CONVEX_PORT` or `E2E_PORT` if needed. The backend binary version is pinned for reproducibility; `E2E_CONVEX_BACKEND_VERSION` can override it when upgrading the CLI.
+The runner creates an isolated local Convex deployment, random credentials and encryption keys, and temporary accounts. It does not reset the application backend. Default ports are 3212/3213 for Convex and 5175 for the application. Override `E2E_CONVEX_PORT` or `E2E_PORT` when needed.
 
-Test a local production Node build in PowerShell:
+To verify a production Node build in PowerShell:
 
 ```powershell
 $env:E2E_PRODUCTION = 'true'
@@ -186,32 +198,36 @@ Remove-Item Env:E2E_PRODUCTION
 npm run build
 ```
 
-Production browser tests use port 5176 and their own build origin. The final regular build restores the local configured origin. Browser coverage includes responsive navigation, chat retries, handoff, private question editing and manual sending, draft confirmation, preserved edits, summaries, decisions, NIK, and Excel. Test screenshots and downloads contain synthetic data only.
+Production browser tests use port 5176 and their own origin; the final build restores the normal configuration. Test screenshots and exports contain synthetic data only.
 
-`tests/e2e/deployed_smoke.py` verifies an existing HTTPS evaluation deployment. It requires `EVALUATION_BASE_URL`, `DEMO_STAFF_ADMIN_PASSWORD`, and an explicit `ALLOW_EVALUATION_WRITE=true` opt-in. It creates a clearly marked synthetic report and decision, exercises staff guidance and export permissions, deletes only its own test record through the confirmation dialog, then logs out. Run it only against the intended mock environment; it is not a read-only probe.
+`tests/e2e/deployed_smoke.py` verifies an existing HTTPS evaluation deployment. It requires `EVALUATION_BASE_URL`, `DEMO_STAFF_ADMIN_PASSWORD`, and explicit `ALLOW_EVALUATION_WRITE=true`. It creates one marked synthetic report, exercises the staff workflow, deletes its own report with confirmation, and logs out. Run it only against the intended evaluation environment.
 
-## Security boundaries
+## Security and operational limits
 
-- Use synthetic names, contacts, NIK, and narratives only. MFA, organizational identity management, account recovery, penetration testing, retention automation, and independent security assessment are not implemented.
-- NIK storage is a demo exception to the original product brief. Production requires review of lawful processing, privacy notices, consent, retention, deletion, and access policy. Downloaded Excel files are outside application access controls.
-- Identity values are not shown in the staff inbox. Administrator reveal and export actions are audited. AI guidance remains unconfirmed until reporter review and submission.
-- Open handoffs block automatic AI turns and report submission. Quote validation and revision checks prevent unsupported extraction and stale-result overwrites; they do not guarantee model correctness.
-- Convex rate counters are shared across application instances. They are application controls, not distributed denial-of-service protection. Mock datasets use list queries appropriate for limited team evaluation; larger deployments need pagination and retention planning.
-- No social-services integration, medical examination arrangements, accompaniment, referrals, or external message delivery are implemented.
+- Sensitive values are encrypted before storage. Decryption and AI provider requests run in server code. NIK has a separate encryption key.
+- Stored sessions, roles, assignments, CSRF checks, origin checks, shared rate limits, and audit events control access. Open handoffs block automatic AI turns and report submission.
+- Draft versions, idempotent submission, and message revision checks prevent stale work from overwriting newer state. Quote validation reduces unsupported extraction; it does not guarantee model correctness.
+- No MFA, organizational identity management, self-service recovery, automated retention, independent penetration testing, or operational security assessment is implemented.
+- There is no automatic external referral, social-services integration, medical examination arrangement, or external message delivery.
+- Queries and notifications are designed for limited evaluation datasets. Larger deployments require pagination, retention planning, and capacity assessment.
+- Use independent backend deployments, data, passwords, and keys for each environment. Never use real victim data for this evaluation.
 
-See [SECURITY.md](SECURITY.md) for reporting and operational boundaries.
+See [SECURITY.md](SECURITY.md) for disclosure and operational boundaries.
 
 ## Repository layout
 
 | Path | Contents |
 | --- | --- |
-| `convex/schema.ts` | Document schemas and indexes |
-| `convex/` | Transactional sessions, staff, reports, chat, handoffs, rate limits, audit, and demo seed functions |
-| `convex/_generated/` | CLI-generated API and schema types; committed with the functions |
-| `src/lib/server/` | Server-side Convex client, encryption, cookies, authorization, AI, reports, and exports |
-| `src/routes/` | Public/staff pages, form actions, and same-origin API endpoints |
-| `scripts/` | Convex seed/check, secret scanner, isolated browser test runner |
-| `tests/integration/` | Convex lifecycle and authorization tests |
+| `convex/` | Database schema, transactions, sessions, staff, chat, handoffs, audit, and demo seed functions |
+| `convex/_generated/` | Committed CLI-generated API and schema types |
+| `src/lib/server/` | Backend client, encryption, authorization, AI, reporting, and exports |
+| `src/routes/` | Public and staff pages, form actions, and same-origin API endpoints |
+| `static/brand/` | PSC SAHABAT vector and PNG assets, Puskesmas emblem, and provenance |
+| `scripts/` | Seed, connectivity check, secret scanner, and isolated browser runner |
+| `tests/integration/` | Native Convex lifecycle and authorization tests |
 | `.github/workflows/` | Security, type, build, and integration checks |
+| `vercel.json` | Branch-based automatic deployment policy |
 
-Internal product, design, QA, and audit documents remain local. `.env*`, `.convex/`, `.vercel/`, screenshots, and generated downloads are excluded from publication, except for the placeholder-only `.env.example`.
+Internal working documents, credentials, local platform metadata, screenshots, and generated exports are excluded from publication. `.env.example` contains placeholders only. The earlier PostgreSQL implementation remains in Git history; its local database was neither copied nor modified.
+
+Reporter, staff, and technical Word manuals are maintained separately. Their existing screenshots predate the PSC SAHABAT interface revision and need refreshing before redistribution. Credentials and private deployment configuration are not included in those manuals.
