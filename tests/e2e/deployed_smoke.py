@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import uuid
+import traceback
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 
@@ -130,9 +131,10 @@ try:
         assert staff.request.get(base + '/api/staff/reports').status == 401
         reporter.request.delete(base + '/api/chat/session', headers=reporter_headers)
         browser.close()
-        print('HOSTED_SMOKE_OK: HTTPS, security headers, session cookies, staff login, private guidance, manual sending, finalized fields, idempotent submission, decision, NIK, transcript, export and logout.')
+        print('HOSTED_SMOKE_OK: HTTPS, security headers, session cookies, staff login, private guidance, manual sending, finalized fields, idempotent submission, decision, NIK, transcript, education, notifications, export, confirmed deletion and logout.')
         print('Deleted synthetic evaluation reference: ' + reference)
         print('Artifacts: ' + str(output))
 except Exception as error:
-    print('HOSTED_SMOKE_FAILED: ' + stage + ' (' + type(error).__name__ + '). Private details withheld.', file=sys.stderr)
+    line = next((frame.lineno for frame in reversed(traceback.extract_tb(error.__traceback__)) if frame.filename.endswith('deployed_smoke.py')), 0)
+    print('HOSTED_SMOKE_FAILED: ' + stage + ' (' + type(error).__name__ + ', script line ' + str(line) + '). Private details withheld.', file=sys.stderr)
     raise SystemExit(1)
