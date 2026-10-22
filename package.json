@@ -8,24 +8,26 @@
 		"build": "vite build",
 		"preview": "node --env-file=.env ./node_modules/vite/bin/vite.js preview",
 		"start": "node --env-file=.env build",
-		"db:migrate": "node --env-file=.env scripts/migrate.mjs",
-		"db:seed": "node --env-file=.env scripts/seed-demo.mjs",
-		"db:reset": "node --env-file=.env scripts/seed-demo.mjs --reset",
-		"db:check": "node --env-file=.env scripts/check-db.mjs",
+		"convex:dev": "convex dev --tail-logs disable",
+		"convex:deploy": "convex deploy",
+		"db:seed": "node --env-file=.env scripts/seed-convex.mjs",
+		"db:check": "node --env-file=.env scripts/check-convex.mjs",
 		"security:scan": "node scripts/scan-secrets.mjs",
-		"worker:notify": "node --env-file=.env scripts/notify-worker.mjs",
 		"test": "vitest run",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:convex": "tsc -p convex/tsconfig.json --noEmit",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"test:integration": "node --env-file=.env ./node_modules/vitest/vitest.mjs run --config vitest.integration.config.ts",
+		"test:integration": "vitest run --config vitest.integration.config.ts",
 		"test:e2e": "node --env-file=.env scripts/test-e2e.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-node": "^6.0.0",
+		"@sveltejs/adapter-vercel": "^7.0.1",
 		"@sveltejs/kit": "^3.0.0",
 		"@sveltejs/vite-plugin-svelte": "^7.2.0",
-		"@types/pg": "^8.23.1",
+		"@types/node": "^26.6.5",
+		"convex-test": "^0.0.64",
 		"svelte": "^5.57.1",
 		"svelte-check": "^4.6.0",
 		"typescript": "^6.0.3",
@@ -33,7 +35,7 @@
 		"vitest": "^5.0.5"
 	},
 	"dependencies": {
-		"pg": "^8.23.1",
+		"convex": "^1.47.0",
 		"zod": "^4.6.7"
 	}
 }

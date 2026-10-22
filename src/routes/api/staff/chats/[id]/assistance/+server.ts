@@ -14,8 +14,8 @@ export async function POST({ cookies, params, request, locals }) {
 	try { body = await request.json(); } catch { return json({ error: 'Payload tidak valid.' }, { status: 400 }); }
 	const parsed = z.object({ refresh: z.boolean().optional() }).strict().safeParse(body);
 	if (!parsed.success) return json({ error: 'Permintaan panduan tidak valid.' }, { status: 422 });
-	if (!allowAttempt(`staff-assistance:${staff.staffId}`, 60, 10 * 60 * 1000) ||
-		(parsed.data.refresh && !allowAttempt(`staff-assistance-refresh:${staff.staffId}:${params.id}`, 2, 60_000))) {
+	if (!await allowAttempt(`staff-assistance:${staff.staffId}`, 60, 10 * 60 * 1000) ||
+		(parsed.data.refresh && !await allowAttempt(`staff-assistance-refresh:${staff.staffId}:${params.id}`, 2, 60_000))) {
 		return json({ error: 'Panduan terlalu sering diminta. Tunggu sebentar.' }, { status: 429 });
 	}
 	try {

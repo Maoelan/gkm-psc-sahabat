@@ -1,10 +1,10 @@
 import { json } from '@sveltejs/kit';
 import { isAiEnabled, env } from '../../../lib/server/env';
-import { db } from '../../../lib/server/db';
+import { api, query } from '../../../lib/server/convex';
 
 export async function GET() {
 	try {
-		await db.query('SELECT 1');
+		await query(api.sessions.health, {});
 		if (env.NODE_ENV === 'production') return json({ status: 'ok' });
 		return json({
 			status: 'ok',

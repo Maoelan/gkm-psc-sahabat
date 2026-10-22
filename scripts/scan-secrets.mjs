@@ -21,6 +21,7 @@ const skipDirNames = new Set([
   '.svelte-kit',
   'build',
   '.vercel',
+  '.convex',
   '.netlify',
   '.wrangler',
   'coverage',
@@ -44,6 +45,10 @@ const secretEnvKeys = new Set([
   'REPORT_DATA_KEY',
   'NIK_DATA_KEY',
   'NVIDIA_API_KEY',
+  'APPLICATION_SERVER_KEY',
+  'CONVEX_DEPLOY_KEY',
+  'VERCEL_TOKEN',
+  'VERCEL_OIDC_TOKEN',
   'DEMO_STAFF_PETUGAS_PASSWORD',
   'DEMO_STAFF_BIDAN_PASSWORD',
   'DEMO_STAFF_ADMIN_PASSWORD',
@@ -88,17 +93,18 @@ function relative(file) {
 
 
 function parseEnv() {
-  const envPath = path.join(root, '.env');
-  if (!fs.existsSync(envPath)) return new Map();
-  const values = new Map();
-  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
-    const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-    if (!match || !secretEnvKeys.has(match[1])) continue;
-    let value = match[2].trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
+  const values = [];
+  const envFiles = fs.readdirSync(root).filter(name => /^\.env($|\.)/.test(name) && name !== '.env.example');
+  for (const name of envFiles) {
+    for (const line of fs.readFileSync(path.join(root, name), 'utf8').split(/\r?\n/)) {
+      const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+      if (!match || !secretEnvKeys.has(match[1])) continue;
+      let value = match[2].trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      if (value) values.push([match[1], value]);
     }
-    if (value) values.set(match[1], value);
   }
   return values;
 }
@@ -143,7 +149,7 @@ for (const [key, value] of env) {
 
 for (const file of files) {
   const name = relative(file);
-  if (name === '.env') continue;
+  if (/^\.env($|\.)/.test(name) && name !== '.env.example') continue;
   const content = fs.readFileSync(file, 'utf8');
   for (const { key, value } of envValues) {
     if (content.includes(value)) add({ type: 'env_value', key, file: name });
@@ -165,7 +171,7 @@ const patterns = [
 
 for (const file of files) {
   const name = relative(file);
-  if (name === '.env') continue;
+  if (/^\.env($|\.)/.test(name) && name !== '.env.example') continue;
   const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
@@ -259,7 +265,7 @@ if (tracked) {
   const sensitiveTracked = tracked.split(/\r?\n/).filter((name) =>
     /(^|\/)\.env($|\.)/.test(name) && !name.endsWith('.env.example') ||
     /\.(pem|key|p12|pfx|jks|keystore|sqlite|sqlite3|db|dump|backup)$/i.test(name) ||
-    /(^|\/)(node_modules|build|\.svelte-kit|\.agents|\.impeccable|\.taste-skill|taste-chat-output)\//.test(name)
+    /(^|\/)(node_modules|build|\.convex|\.vercel|\.svelte-kit|\.agents|\.impeccable|\.taste-skill|taste-chat-output)\//.test(name)
   );
   for (const file of sensitiveTracked) add({ type: 'sensitive_tracked_file', file });
 }

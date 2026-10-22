@@ -9,7 +9,7 @@ export async function load({ cookies }) {
 
 	try {
 		return {
-			reports: await getOfficerReports(staff.staffId, staff.roles.includes('admin')),
+			reports: await getOfficerReports(staff),
 			csrfToken: staff.csrfToken,
 			isAdmin: staff.roles.includes('admin'),
 			staff: { displayName: staff.displayName, roles: staff.roles },

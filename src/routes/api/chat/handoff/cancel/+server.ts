@@ -19,7 +19,7 @@ export async function POST({ cookies, request, locals }) {
 	if (!hasValidCsrf(request, session)) {
 		return json({ error: 'Token keamanan sesi tidak cocok.' }, { status: 403 });
 	}
-	if (!allowAttempt(`handoff-cancel:${session.id}`, 10, 10 * 60 * 1000)) {
+	if (!await allowAttempt(`handoff-cancel:${session.id}`, 10, 10 * 60 * 1000)) {
 		return json({ error: 'Terlalu banyak permintaan. Coba lagi nanti.' }, { status: 429 });
 	}
 

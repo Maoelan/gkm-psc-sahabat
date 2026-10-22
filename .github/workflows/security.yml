@@ -29,32 +29,23 @@ jobs:
         run: npm run security:scan -- --history
 
       - name: Check types and unit tests
-        run: npm run check && npm test
+        run: npm run check && npm run check:convex && npm test
 
       - name: Build
         run: npm run build && npm run security:scan -- --client
+
+      - name: Build Vercel deployment artifacts
+        run: npm run build
+        env:
+          DEPLOY_TARGET: vercel
+          PUBLIC_BASE_URL: https://evaluation.example.test
 
       - name: Audit dependencies
         run: npm audit --audit-level=low
 
   integration:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: lapor_aman_test
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: CHANGE_ME_CI_ONLY
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     env:
-      DATABASE_URL: postgresql://test_user:CHANGE_ME_CI_ONLY@localhost:5432/lapor_aman_test
       AI_ENABLED: 'false'
       PUBLIC_BASE_URL: http://localhost:5173
     steps:
@@ -68,4 +59,4 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Test isolation, authorization, and concurrency
-        run: node ./node_modules/vitest/vitest.mjs run --config vitest.integration.config.ts
+        run: npm run check:convex && npm run test:integration

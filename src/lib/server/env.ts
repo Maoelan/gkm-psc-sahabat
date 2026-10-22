@@ -23,6 +23,7 @@ export function isAiEnabled() {
  * demo lokal yang dijalankan lewat HTTP.
  */
 export function secureCookies() {
+	if (env.VERCEL === '1') return true;
 	const baseUrl = env.PUBLIC_BASE_URL?.trim();
 	if (baseUrl) {
 		const url = new URL(baseUrl);

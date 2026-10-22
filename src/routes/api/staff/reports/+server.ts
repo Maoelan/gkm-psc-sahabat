@@ -6,7 +6,7 @@ export async function GET({ cookies }) {
 	const staff = await requireStaffApi(cookies, ['petugas', 'admin']);
 	if (staff instanceof Response) return staff;
 	try {
-		return json({ reports: await getOfficerReports(staff.staffId, staff.roles.includes('admin')) });
+		return json({ reports: await getOfficerReports(staff) });
 	} catch {
 		return json({ error: 'Daftar laporan tidak dapat dimuat.' }, { status: 503 });
 	}

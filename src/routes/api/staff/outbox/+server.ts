@@ -6,7 +6,7 @@ export async function GET({ cookies }) {
 	const staff = await requireStaffApi(cookies, ['admin']);
 	if (staff instanceof Response) return staff;
 	try {
-		return json(await getOutboxSummary());
+		return json(await getOutboxSummary(staff));
 	} catch {
 		return json({ error: 'Status notifikasi tidak dapat dimuat.' }, { status: 503 });
 	}

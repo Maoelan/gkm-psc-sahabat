@@ -1,970 +1,383 @@
-import { createHash, randomUUID } from 'node:crypto';
-import type { PoolClient } from 'pg';
-import { db, transaction } from './db';
-import { decrypt, encrypt } from './crypto';
-import { recordAudit } from './audit';
-import { getServiceModeAt } from './service-mode';
-import { maskSensitiveText, type TranscriptMessage } from '../reports';
+import { randomUUID } from "node:crypto";
+import { api, query, mutate, seal, unseal, BackendError } from "./convex";
+import { recordAudit } from "./audit";
+import { getServiceModeAt } from "./service-mode";
+import { maskSensitiveText } from "../reports";
 import type {
-	ActiveConversation,
-	HandoffCloseReason,
-	HandoffQueueItem,
-	HandoffStatus,
-	HandoffThreadMessage,
-	ReporterHandoff,
-	StaffHandoff
-} from '../handoff';
-import type { ReporterSession } from './session';
-import type { StaffSession } from './staff-auth';
-import { collectedChatFields, type StaffAssistance } from '../assistance';
-import { finalizeStaffAssistance, makeStaffAssistance } from './assistance-ai';
+  ActiveConversation,
+  HandoffQueueItem,
+  HandoffThreadMessage,
+  ReporterHandoff,
+  StaffHandoff,
+} from "../handoff";
+import type { ReporterSession } from "./session";
+import type { StaffSession } from "./staff-auth";
+import { collectedChatFields, type StaffAssistance } from "../assistance";
+import { finalizeStaffAssistance, makeStaffAssistance } from "./assistance-ai";
+import type { Doc } from "../../../convex/model";
 
-type Queryable = Pick<PoolClient, 'query'>;
-
-type HandoffRow = {
-	id: string;
-	session_id: string;
-	status: HandoffStatus;
-	requested_at: Date;
-	claimed_by: string | null;
-	claimed_at: Date | null;
-	closed_by: string | null;
-	closed_at: Date | null;
-	close_reason: HandoffCloseReason | null;
-};
-
-type StaffHandoffRow = HandoffRow & {
-	session_status: string;
-	session_expires_at: Date;
-	claimed_by_name: string | null;
-};
-
-type QueueRow = HandoffRow & {
-	claimed_by_name: string | null;
-	claimed_by_me: boolean;
-	message_count: number;
-	last_message_at: Date | null;
-};
-
-type ActiveConversationRow = {
-	session_id: string;
-	mode: ActiveConversation['mode'];
-	created_at: Date;
-	last_message_at: Date;
-	message_count: number;
-	body_enc: Buffer;
-	body_iv: Buffer;
-	body_tag: Buffer;
-};
-
-type MessageRow = {
-	id: string;
-	sender_type: TranscriptMessage['sender'];
-	source: TranscriptMessage['source'];
-	body_enc: Buffer;
-	body_iv: Buffer;
-	body_tag: Buffer;
-	created_at: Date;
-};
-
-
-export class HandoffServiceError extends Error {
-	status: number;
-	code: string;
-
-	constructor(status: number, code: string, message: string) {
-		super(message);
-		this.status = status;
-		this.code = code;
-	}
+export { BackendError as HandoffServiceError };
+type Handoff = Omit<Doc<"handoffs">, "_id" | "_creationTime">;
+type Message = Omit<Doc<"messages">, "_id" | "_creationTime">;
+function mapHandoff(h: Handoff): ReporterHandoff {
+  return {
+    id: h.id,
+    status: h.status,
+    requestedAt: new Date(h.requestedAt).toISOString(),
+    claimedAt: h.claimedAt ? new Date(h.claimedAt).toISOString() : null,
+    closedAt: h.closedAt ? new Date(h.closedAt).toISOString() : null,
+    closeReason: h.closeReason ?? null,
+  };
 }
-
-function mapHandoff(row: HandoffRow): ReporterHandoff {
-	return {
-		id: row.id,
-		status: row.status,
-		requestedAt: row.requested_at.toISOString(),
-		claimedAt: row.claimed_at?.toISOString() ?? null,
-		closedAt: row.closed_at?.toISOString() ?? null,
-		closeReason: row.close_reason
-	};
+function mapStaff(
+  h: Handoff,
+  staff: StaffSession,
+  name: string | null,
+): StaffHandoff {
+  return {
+    ...mapHandoff(h),
+    claimedByMe: h.claimedBy === staff.staffId,
+    claimedByName: name,
+  };
 }
-
-function mapStaffHandoff(row: StaffHandoffRow, staff: StaffSession): StaffHandoff {
-	return {
-		...mapHandoff(row),
-		claimedByMe: row.claimed_by === staff.staffId,
-		claimedByName: row.claimed_by_name
-	};
+function mapMessage(m: Message): HandoffThreadMessage {
+  return {
+    id: m.id,
+    sender: m.sender,
+    source: m.source,
+    body: maskSensitiveText(unseal(m.body, "chat_message")),
+    createdAt: new Date(m.createdAt).toISOString(),
+  };
 }
-
-function mapMessage(row: MessageRow): HandoffThreadMessage | null {
-	try {
-		return {
-			id: row.id,
-			sender: row.sender_type,
-			source: row.source,
-			body: maskSensitiveText(decrypt(row.body_enc, row.body_iv, row.body_tag, 'chat_message')),
-			createdAt: row.created_at.toISOString()
-		};
-	} catch {
-		return null;
-	}
+function mapMessages(rows: Message[]) {
+  return rows.flatMap((m) => {
+    try {
+      return [mapMessage(m)];
+    } catch {
+      return [];
+    }
+  });
 }
-
-function mapMessages(rows: MessageRow[]) {
-	return rows
-		.map(mapMessage)
-		.filter((message): message is HandoffThreadMessage => Boolean(message));
+function afterCursor(rows: Message[], after?: string | null) {
+  const cursor = rows.find((m) => m.id === after);
+  return cursor ? rows.filter((m) => m.seq > cursor.seq) : rows;
 }
-
-async function insertHandoffMessage(
-	client: Queryable,
-	input: {
-		sessionId: string;
-		handoffId: string;
-		sender: 'user' | 'staff' | 'service';
-		source: 'user' | 'staff' | 'handoff';
-		body: string;
-		staffId?: string | null;
-	}
-) {
-	const messageId = randomUUID();
-	const encrypted = encrypt(input.body.trim(), 'chat_message');
-	const result = await client.query<{ created_at: Date }>(
-		`INSERT INTO chat_messages
-		 (id, session_id, sender_type, source, body_enc, body_iv, body_tag, staff_id, handoff_id, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
-		 RETURNING created_at`,
-		[
-			messageId,
-			input.sessionId,
-			input.sender,
-			input.source,
-			encrypted.encrypted,
-			encrypted.iv,
-			encrypted.tag,
-			input.staffId ?? null,
-			input.handoffId
-		]
-	);
-	return {
-		id: messageId,
-		sender: input.sender,
-		source: input.source,
-		body: maskSensitiveText(input.body.trim()),
-		createdAt: result.rows[0].created_at.toISOString()
-	} satisfies HandoffThreadMessage;
+function serviceMessage(body: string) {
+  return { id: randomUUID(), body: seal(body, "chat_message") };
 }
-
-async function latestHandoffMessageId(client: Queryable, handoffId: string) {
-	const result = await client.query<{ id: string }>(
-		`SELECT id FROM chat_messages
-		 WHERE handoff_id = $1
-		 ORDER BY created_at DESC, id DESC
-		 LIMIT 1`,
-		[handoffId]
-	);
-	return result.rows[0]?.id ?? null;
+function readAssistance(
+  cache: Doc<"assistance"> | null,
+): StaffAssistance | undefined {
+  return cache
+    ? (JSON.parse(unseal(cache.content, "staff_assistance")) as StaffAssistance)
+    : undefined;
 }
-
-export async function acquireChatLock(client: Queryable, sessionId: string) {
-	await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [sessionId]);
-}
-
-async function lockSession(client: PoolClient, sessionId: string) {
-	await acquireChatLock(client, sessionId);
-	const result = await client.query<{ status: string; expires_at: Date }>(
-		`SELECT status, expires_at FROM chat_sessions WHERE id = $1 FOR UPDATE`,
-		[sessionId]
-	);
-	const session = result.rows[0];
-	if (!session || session.status !== 'active' || session.expires_at.getTime() <= Date.now()) {
-		throw new HandoffServiceError(401, 'session_expired', 'Sesi sudah berakhir. Muat ulang halaman.');
-	}
-	return session;
-}
-
-async function lockOpenHandoff(client: Queryable, sessionId: string) {
-	const result = await client.query<HandoffRow>(
-		`SELECT * FROM chat_handoffs
-		 WHERE session_id = $1 AND status IN ('waiting', 'active')
-		 LIMIT 1
-		 FOR UPDATE`,
-		[sessionId]
-	);
-	return result.rows[0] ?? null;
-}
-
-async function loadStaffHandoff(
-	client: Queryable,
-	handoffId: string,
-	lock = false
-): Promise<StaffHandoffRow> {
-	if (lock) {
-		const sessionResult = await client.query<{ session_id: string }>(
-			'SELECT session_id FROM chat_handoffs WHERE id = $1 LIMIT 1',
-			[handoffId]
-		);
-		const sessionId = sessionResult.rows[0]?.session_id;
-		if (!sessionId) {
-			throw new HandoffServiceError(404, 'handoff_not_found', 'Percakapan tidak ditemukan.');
-		}
-		await acquireChatLock(client, sessionId);
-	}
-	const result = await client.query<StaffHandoffRow>(
-		`SELECT ch.*, cs.status AS session_status, cs.expires_at AS session_expires_at,
-		        su.display_name AS claimed_by_name
-		 FROM chat_handoffs ch
-		 JOIN chat_sessions cs ON cs.id = ch.session_id
-		 LEFT JOIN staff_users su ON su.id = ch.claimed_by
-		 WHERE ch.id = $1
-		 LIMIT 1
-		 ${lock ? 'FOR UPDATE OF ch, cs' : ''}`,
-		[handoffId]
-	);
-	const row = result.rows[0];
-	if (!row) throw new HandoffServiceError(404, 'handoff_not_found', 'Percakapan tidak ditemukan.');
-	if (row.session_status !== 'active' || row.session_expires_at.getTime() <= Date.now()) {
-		throw new HandoffServiceError(409, 'session_expired', 'Sesi pelapor sudah berakhir.');
-	}
-	return row;
-}
-
-function assertStaffCanAccess(staff: StaffSession, row: StaffHandoffRow) {
-	const isAdmin = staff.roles.includes('admin');
-	if (!isAdmin && row.claimed_by !== staff.staffId) {
-		throw new HandoffServiceError(
-			403,
-			'handoff_forbidden',
-			'Percakapan ini sedang ditangani petugas lain.'
-		);
-	}
-}
-
-function assertThreadAvailable(row: StaffHandoffRow) {
-	if (row.status === 'waiting') {
-		throw new HandoffServiceError(
-			409,
-			'handoff_not_claimed',
-			'Ambil percakapan ini sebelum membuka transkrip.'
-		);
-	}
-}
-
-async function sessionMessages(sessionId: string, after?: string | null, client: Queryable = db) {
-	const result = await client.query<MessageRow>(
-		`SELECT m.id, m.sender_type, m.source, m.body_enc, m.body_iv, m.body_tag, m.created_at
-		 FROM chat_messages m
-		 WHERE m.session_id = $1
-		   ${
-				after
-					? `AND (
-						NOT EXISTS (
-							SELECT 1 FROM chat_messages c
-							WHERE c.id = $2 AND c.session_id = $1
-						)
-						OR (m.created_at, m.id) > (
-							SELECT c.created_at, c.id FROM chat_messages c
-							WHERE c.id = $2 AND c.session_id = $1
-						)
-					)`
-					: ''
-			}
-		 ORDER BY m.created_at ASC, m.id ASC`,
-		after ? [sessionId, after] : [sessionId]
-	);
-	return mapMessages(result.rows);
-}
-
-async function handoffMessages(sessionId: string, handoffId: string, after?: string | null) {
-	const result = await db.query<MessageRow>(
-		`SELECT m.id, m.sender_type, m.source, m.body_enc, m.body_iv, m.body_tag, m.created_at
-		 FROM chat_messages m
-		 WHERE m.session_id = $1 AND m.handoff_id = $2
-		   ${
-				after
-					? `AND (
-						NOT EXISTS (
-							SELECT 1 FROM chat_messages c
-							WHERE c.id = $3 AND c.session_id = $1 AND c.handoff_id = $2
-						)
-						OR (m.created_at, m.id) > (
-							SELECT c.created_at, c.id FROM chat_messages c
-							WHERE c.id = $3 AND c.session_id = $1 AND c.handoff_id = $2
-						)
-					)`
-					: ''
-			}
-		 ORDER BY m.created_at ASC, m.id ASC`,
-		after ? [sessionId, handoffId, after] : [sessionId, handoffId]
-	);
-	return mapMessages(result.rows);
-}
-
+const joined =
+  "Petugas sudah bergabung. Balasan otomatis AI dijeda. AI dapat membantu petugas meninjau keterangan Anda.";
 export async function hasOpenHandoff(sessionId: string) {
-	const result = await db.query(
-		`SELECT 1 FROM chat_handoffs
-		 WHERE session_id = $1 AND status IN ('waiting', 'active')
-		 LIMIT 1`,
-		[sessionId]
-	);
-	return Boolean(result.rowCount);
+  return query(api.chat.hasHandoff, { sessionId });
 }
-
-export async function createHandoff(session: ReporterSession, requestId?: string | null) {
-	const scheduledMode = await getServiceModeAt();
-	// Mode sesi hanya dapat dipaksa lewat ?mode=operator pada server pengembangan.
-	const devOverride =
-		process.env.NODE_ENV === 'development' && session.mode === 'operator';
-	if (scheduledMode !== 'operator' && !devOverride) {
-		throw new HandoffServiceError(
-			409,
-			'outside_operator_hours',
-			'Bantuan petugas hanya tersedia selama jam layanan. Anda tetap dapat melanjutkan dengan panduan.'
-		);
-	}
-
-	return transaction(async (client) => {
-		await lockSession(client, session.id);
-		const report = await client.query(
-			'SELECT 1 FROM reports WHERE source_session_id = $1 LIMIT 1',
-			[session.id]
-		);
-		if (report.rowCount) {
-			throw new HandoffServiceError(
-				409,
-				'report_already_submitted',
-				'Laporan sudah dikirim. Bantuan percakapan langsung tidak tersedia setelah pengiriman.'
-			);
-		}
-
-		const existing = await lockOpenHandoff(client, session.id);
-		if (existing) {
-			return {
-				handoff: mapHandoff(existing),
-				message: null,
-				latestMessageId: await latestHandoffMessageId(client, existing.id)
-			};
-		}
-
-		const handoffId = randomUUID();
-		const inserted = await client.query<HandoffRow>(
-			`INSERT INTO chat_handoffs (id, session_id, status)
-			 VALUES ($1, $2, 'waiting')
-			 RETURNING *`,
-			[handoffId, session.id]
-		);
-		const row = inserted.rows[0];
-		const message = await insertHandoffMessage(client, {
-			sessionId: session.id,
-			handoffId,
-			sender: 'service',
-			source: 'handoff',
-			body: 'Permintaan bantuan petugas sudah dikirim. Anda tetap dapat menulis; pesan akan dibaca petugas saat bergabung.'
-		});
-		await recordAudit(
-			{
-				actorType: 'anonymous',
-				action: 'chat.handoff.requested',
-				objectType: 'chat_handoff',
-				objectId: handoffId,
-				requestId
-			},
-			client
-		);
-		return {
-			handoff: mapHandoff(row),
-			message,
-			latestMessageId: message.id
-		};
-	});
+export async function createHandoff(
+  session: ReporterSession,
+  requestId?: string | null,
+) {
+  if (
+    (await getServiceModeAt()) !== "operator" &&
+    !(process.env.NODE_ENV === "development" && session.mode === "operator")
+  )
+    throw new BackendError(
+      409,
+      "outside_operator_hours",
+      "Bantuan petugas hanya tersedia selama jam layanan. Anda tetap dapat melanjutkan dengan panduan.",
+    );
+  const r = await mutate(api.handoffs.request, {
+    sessionId: session.id,
+    id: randomUUID(),
+    message: serviceMessage(
+      "Permintaan bantuan petugas sudah dikirim. Anda tetap dapat menulis; pesan akan dibaca petugas saat bergabung.",
+    ),
+    requestId: requestId ?? undefined,
+  });
+  return {
+    handoff: mapHandoff(r.handoff),
+    message: r.message ? mapMessage(r.message) : null,
+    latestMessageId: r.message?.id ?? null,
+  };
 }
-
-export async function getReporterHandoff(sessionId: string, after?: string | null) {
-	const result = await db.query<HandoffRow>(
-		`SELECT * FROM chat_handoffs
-		 WHERE session_id = $1
-		 ORDER BY requested_at DESC, id DESC
-		 LIMIT 1`,
-		[sessionId]
-	);
-	const row = result.rows[0];
-	if (!row) {
-		return { handoff: null, messages: [], latestMessageId: null };
-	}
-	const messages = await handoffMessages(sessionId, row.id, after);
-	const assistance = await readAssistance(sessionId);
-	return {
-		handoff: mapHandoff(row),
-		messages,
-		collectedFields: assistance ? collectedChatFields(assistance.assistance) : {},
-		latestMessageId: messages.at(-1)?.id ?? after ?? null
-	};
+export async function getReporterHandoff(
+  sessionId: string,
+  after?: string | null,
+) {
+  const s = await query(api.handoffs.reporterSnapshot, { sessionId });
+  const h = s.handoff;
+  if (!h)
+    return {
+      handoff: null,
+      messages: [],
+      latestMessageId: null,
+      collectedFields: {},
+    };
+  const rows = afterCursor(
+    s.messages.filter((m) => m.handoffId === h.id),
+    after,
+  );
+  const assistance = readAssistance(s.assistance);
+  return {
+    handoff: mapHandoff(h),
+    messages: mapMessages(rows),
+    latestMessageId: rows.at(-1)?.id ?? after ?? null,
+    collectedFields: assistance ? collectedChatFields(assistance) : {},
+  };
 }
-
 export async function sendReporterHandoffMessage(
-	session: ReporterSession,
-	body: string
+  session: ReporterSession,
+  body: string,
 ) {
-	return transaction(async (client) => {
-		await lockSession(client, session.id);
-		const handoff = await lockOpenHandoff(client, session.id);
-		if (!handoff) {
-			throw new HandoffServiceError(
-				409,
-				'handoff_not_open',
-				'Bantuan petugas sudah tidak aktif. Pesan ini belum terkirim.'
-			);
-		}
-		const message = await insertHandoffMessage(client, {
-			sessionId: session.id,
-			handoffId: handoff.id,
-			sender: 'user',
-			source: 'user',
-			body
-		});
-		return {
-			handoff: mapHandoff(handoff),
-			message,
-			latestMessageId: message.id
-		};
-	});
+  const m = await mutate(api.handoffs.send, {
+    sessionId: session.id,
+    message: serviceMessage(body.trim()),
+  });
+  const s = await getReporterHandoff(session.id);
+  return { handoff: s.handoff!, message: mapMessage(m), latestMessageId: m.id };
 }
-
-export async function cancelReporterHandoff(session: ReporterSession, requestId?: string | null) {
-	return transaction(async (client) => {
-		await lockSession(client, session.id);
-		const handoff = await lockOpenHandoff(client, session.id);
-		if (!handoff) {
-			throw new HandoffServiceError(409, 'handoff_not_open', 'Tidak ada bantuan petugas yang aktif.');
-		}
-		await finalizeConversationAssistance(client, session.id);
-		const updated = await client.query<HandoffRow>(
-			`UPDATE chat_handoffs
-			 SET status = 'cancelled', closed_at = now(), close_reason = 'reporter_cancelled'
-			 WHERE id = $1
-			 RETURNING *`,
-			[handoff.id]
-		);
-		const message = await insertHandoffMessage(client, {
-			sessionId: session.id,
-			handoffId: handoff.id,
-			sender: 'service',
-			source: 'handoff',
-			body: 'Bantuan petugas diakhiri oleh pelapor. Anda bisa melanjutkan dengan panduan atau meminta bantuan lagi.'
-		});
-		await recordAudit(
-			{
-				actorType: 'anonymous',
-				action: 'chat.handoff.cancelled',
-				objectType: 'chat_handoff',
-				objectId: handoff.id,
-				requestId
-			},
-			client
-		);
-		return {
-			handoff: mapHandoff(updated.rows[0]),
-			message,
-			latestMessageId: message.id
-		};
-	});
+export async function getStaffChatQueue(
+  staff: StaffSession,
+): Promise<HandoffQueueItem[]> {
+  return (
+    await query(api.handoffs.queue, { staffSessionId: staff.sessionId })
+  ).map((h) => ({
+    id: h.id,
+    status: h.status as "waiting" | "active",
+    requestedAt: new Date(h.requestedAt).toISOString(),
+    claimedAt: h.claimedAt ? new Date(h.claimedAt).toISOString() : null,
+    claimedByMe: h.claimedBy === staff.staffId,
+    claimedByName: h.claimedByName,
+    messageCount: h.messageCount,
+    lastMessageAt: h.lastMessageAt
+      ? new Date(h.lastMessageAt).toISOString()
+      : null,
+  }));
 }
-
-export async function releaseStaffHandoffs(staffId: string, requestId?: string | null) {
-	return transaction(async (client) => {
-		const rows = await client.query<{ id: string; session_id: string }>(
-			`SELECT id, session_id FROM chat_handoffs
-			 WHERE claimed_by = $1 AND status = 'active'
-			 FOR UPDATE`,
-			[staffId]
-		);
-		for (const row of rows.rows) {
-			await client.query(
-				`UPDATE chat_handoffs
-				 SET status = 'waiting', claimed_by = NULL, claimed_at = NULL
-				 WHERE id = $1 AND status = 'active'`,
-				[row.id]
-			);
-			await insertHandoffMessage(client, {
-				sessionId: row.session_id,
-				handoffId: row.id,
-				sender: 'service',
-				source: 'handoff',
-				body: 'Petugas sebelumnya keluar dari sesi. Permintaan Anda menunggu petugas lain.'
-			});
-			await recordAudit(
-				{
-					actorType: 'staff',
-					actorId: staffId,
-					action: 'chat.handoff.released',
-					objectType: 'chat_handoff',
-					objectId: row.id,
-					requestId
-				},
-				client
-			);
-		}
-		return rows.rowCount ?? 0;
-	});
+export async function getActiveChatSessions(
+  staff: StaffSession,
+): Promise<ActiveConversation[]> {
+  return (
+    await query(api.handoffs.active, { staffSessionId: staff.sessionId })
+  ).flatMap((r) => {
+    try {
+      const preview = maskSensitiveText(
+        unseal(r.lastMessage.body, "chat_message"),
+      )
+        .replace(/\s+/g, " ")
+        .trim();
+      return [
+        {
+          sessionId: r.session.id,
+          mode: r.session.mode,
+          startedAt: new Date(r.session.createdAt).toISOString(),
+          lastMessageAt: new Date(r.lastMessage.createdAt).toISOString(),
+          messageCount: r.messageCount,
+          preview:
+            preview.length > 140 ? `${preview.slice(0, 137)}...` : preview,
+        },
+      ];
+    } catch {
+      return [];
+    }
+  });
 }
-
-export async function getStaffChatQueue(staff: StaffSession): Promise<HandoffQueueItem[]> {
-	const result = await db.query<QueueRow>(
-		`SELECT ch.*, su.display_name AS claimed_by_name,
-		        (ch.claimed_by = $1) AS claimed_by_me,
-		        count(cm.id)::int AS message_count,
-		        max(cm.created_at) AS last_message_at
-		 FROM chat_handoffs ch
-		 JOIN chat_sessions cs ON cs.id = ch.session_id
-		 LEFT JOIN staff_users su ON su.id = ch.claimed_by
-		 LEFT JOIN chat_messages cm ON cm.handoff_id = ch.id
-		 WHERE ch.status IN ('waiting', 'active')
-		   AND cs.status = 'active'
-		   AND cs.expires_at > now()
-		   AND ($2::boolean OR ch.status = 'waiting' OR ch.claimed_by = $1)
-		 GROUP BY ch.id, su.display_name
-		 ORDER BY CASE ch.status WHEN 'waiting' THEN 0 ELSE 1 END, ch.requested_at ASC`,
-		[staff.staffId, staff.roles.includes('admin')]
-	);
-	return result.rows.map((row) => ({
-		id: row.id,
-		status: row.status as 'waiting' | 'active',
-		requestedAt: row.requested_at.toISOString(),
-		claimedAt: row.claimed_at?.toISOString() ?? null,
-		claimedByMe: row.claimed_by_me,
-		claimedByName: row.claimed_by_name,
-		messageCount: Number(row.message_count),
-		lastMessageAt: row.last_message_at?.toISOString() ?? null
-	}));
+async function claim(
+  staff: StaffSession,
+  target: { sessionId?: string; handoffId?: string },
+  requestId?: string | null,
+) {
+  const r = await mutate(api.handoffs.claim, {
+    staffSessionId: staff.sessionId,
+    ...target,
+    id: randomUUID(),
+    message: serviceMessage(joined),
+    requestId: requestId ?? undefined,
+  });
+  return {
+    handoff: mapStaff(r.handoff, staff, r.claimedByName),
+    message: r.message ? mapMessage(r.message) : null,
+    latestMessageId: r.message?.id ?? null,
+  };
 }
-
-export async function getActiveChatSessions(staff: StaffSession): Promise<ActiveConversation[]> {
-	if (!staff.roles.includes('admin')) return [];
-	const result = await db.query<ActiveConversationRow>(
-		`SELECT cs.id AS session_id, cs.mode, cs.created_at,
-		        last.created_at AS last_message_at,
-		        stats.message_count,
-		        last.body_enc, last.body_iv, last.body_tag
-		 FROM chat_sessions cs
-		 JOIN LATERAL (
-			SELECT count(*)::int AS message_count
-			FROM chat_messages cm
-			WHERE cm.session_id = cs.id AND cm.sender_type = 'user'
-		 ) stats ON stats.message_count > 0
-		 JOIN LATERAL (
-			SELECT cm.created_at, cm.body_enc, cm.body_iv, cm.body_tag
-			FROM chat_messages cm
-			WHERE cm.session_id = cs.id AND cm.sender_type = 'user'
-			ORDER BY cm.created_at DESC, cm.id DESC
-			LIMIT 1
-		 ) last ON true
-		 WHERE cs.status = 'active'
-		   AND cs.expires_at > now()
-		   AND NOT EXISTS (SELECT 1 FROM chat_handoffs ch WHERE ch.session_id = cs.id AND ch.status IN ('waiting', 'active'))
-		   AND NOT EXISTS (SELECT 1 FROM reports r WHERE r.source_session_id = cs.id)
-		 ORDER BY last.created_at DESC
-		 LIMIT 20`
-	);
-	const conversations: ActiveConversation[] = [];
-	for (const row of result.rows) {
-		try {
-			const preview = maskSensitiveText(
-				decrypt(row.body_enc, row.body_iv, row.body_tag, 'chat_message')
-			)
-				.replace(/\s+/g, ' ')
-				.trim();
-			conversations.push({
-				sessionId: row.session_id,
-				mode: row.mode,
-				startedAt: row.created_at.toISOString(),
-				lastMessageAt: row.last_message_at.toISOString(),
-				messageCount: Number(row.message_count),
-				preview: preview.length > 140 ? `${preview.slice(0, 137)}...` : preview
-			});
-		} catch {
-			// Lewati pesan yang tidak dapat didekripsi; antrean lain tetap dapat dipakai.
-		}
-	}
-	return conversations;
-}
-
 export async function takeoverChatSession(
-	staff: StaffSession,
-	sessionId: string,
-	requestId?: string | null
+  staff: StaffSession,
+  sessionId: string,
+  requestId?: string | null,
 ) {
-	if (!staff.roles.includes('admin')) {
-		throw new HandoffServiceError(
-			403,
-			'takeover_forbidden',
-			'Ambil alih percakapan hanya untuk akun admin.'
-		);
-	}
-	return transaction(async (client) => {
-		await lockSession(client, sessionId);
-		const report = await client.query(
-			'SELECT 1 FROM reports WHERE source_session_id = $1 LIMIT 1',
-			[sessionId]
-		);
-		if (report.rowCount) {
-			throw new HandoffServiceError(
-				409,
-				'report_already_submitted',
-				'Laporan sudah dikirim. Percakapan langsung tidak dapat diambil alih.'
-			);
-		}
-		const userMessage = await client.query(
-			`SELECT 1 FROM chat_messages
-			 WHERE session_id = $1 AND sender_type = 'user'
-			 LIMIT 1`,
-			[sessionId]
-		);
-		if (!userMessage.rowCount) {
-			throw new HandoffServiceError(
-				409,
-				'chat_not_ready',
-				'Percakapan ini belum memiliki pesan pelapor.'
-			);
-		}
-
-		const existing = await lockOpenHandoff(client, sessionId);
-		if (existing) {
-			if (existing.status === 'active' && existing.claimed_by === staff.staffId) {
-				const row = await loadStaffHandoff(client, existing.id);
-				return {
-					handoff: mapStaffHandoff(row, staff),
-					message: null,
-					latestMessageId: await latestHandoffMessageId(client, existing.id)
-				};
-			}
-			if (existing.status === 'active') {
-				throw new HandoffServiceError(
-					409,
-					'handoff_already_claimed',
-					'Percakapan ini sedang ditangani petugas lain.'
-				);
-			}
-
-			await client.query(
-				`UPDATE chat_handoffs
-				 SET status = 'active', claimed_by = $2, claimed_at = now()
-				 WHERE id = $1 AND status = 'waiting'`,
-				[existing.id, staff.staffId]
-			);
-			await client.query(
-				`UPDATE chat_sessions
-				 SET expires_at = GREATEST(expires_at, now() + interval '2 hours')
-				 WHERE id = $1`,
-				[sessionId]
-			);
-			const message = await insertHandoffMessage(client, {
-				sessionId,
-				handoffId: existing.id,
-				sender: 'service',
-				source: 'handoff',
-				body: 'Petugas sudah bergabung. Balasan otomatis AI dijeda. AI dapat membantu petugas meninjau keterangan Anda.'
-			});
-			await recordAudit(
-				{
-					actorType: 'staff',
-					actorId: staff.staffId,
-					action: 'chat.handoff.claimed',
-					objectType: 'chat_handoff',
-					objectId: existing.id,
-					requestId,
-					metadata: { initiatedBy: 'staff', sessionId }
-				},
-				client
-			);
-			const row = await loadStaffHandoff(client, existing.id);
-			return {
-				handoff: mapStaffHandoff(row, staff),
-				message,
-				latestMessageId: message.id
-			};
-		}
-
-		const handoffId = randomUUID();
-		await client.query(
-			`INSERT INTO chat_handoffs (id, session_id, status, claimed_by, claimed_at)
-			 VALUES ($1, $2, 'active', $3, now())`,
-			[handoffId, sessionId, staff.staffId]
-		);
-		await client.query(
-			`UPDATE chat_sessions
-			 SET expires_at = GREATEST(expires_at, now() + interval '2 hours')
-			 WHERE id = $1`,
-			[sessionId]
-		);
-		const message = await insertHandoffMessage(client, {
-			sessionId,
-			handoffId,
-			sender: 'service',
-			source: 'handoff',
-			body: 'Petugas sudah bergabung. Balasan otomatis AI dijeda. AI dapat membantu petugas meninjau keterangan Anda.'
-		});
-		await recordAudit(
-			{
-				actorType: 'staff',
-				actorId: staff.staffId,
-				action: 'chat.handoff.staff_takeover',
-				objectType: 'chat_handoff',
-				objectId: handoffId,
-				requestId,
-				metadata: { sessionId }
-			},
-			client
-		);
-		const row = await loadStaffHandoff(client, handoffId);
-		return {
-			handoff: mapStaffHandoff(row, staff),
-			message,
-			latestMessageId: message.id
-		};
-	});
+  return claim(staff, { sessionId }, requestId);
 }
-
 export async function claimStaffChat(
-	staff: StaffSession,
-	handoffId: string,
-	requestId?: string | null
+  staff: StaffSession,
+  handoffId: string,
+  requestId?: string | null,
 ) {
-	return transaction(async (client) => {
-		const row = await loadStaffHandoff(client, handoffId, true);
-		if (row.status === 'active' && row.claimed_by === staff.staffId) {
-			return {
-				handoff: mapStaffHandoff(row, staff),
-				message: null,
-				latestMessageId: await latestHandoffMessageId(client, handoffId)
-			};
-		}
-		if (row.status !== 'waiting') {
-			throw new HandoffServiceError(
-				409,
-				'handoff_already_claimed',
-				'Percakapan ini sudah diambil petugas lain atau sudah ditutup.'
-			);
-		}
-		const updated = await client.query<HandoffRow>(
-			`UPDATE chat_handoffs
-			 SET status = 'active', claimed_by = $2, claimed_at = now()
-			 WHERE id = $1 AND status = 'waiting'
-			 RETURNING *`,
-			[handoffId, staff.staffId]
-		);
-		await client.query(
-			`UPDATE chat_sessions
-			 SET expires_at = GREATEST(expires_at, now() + interval '2 hours')
-			 WHERE id = $1`,
-			[row.session_id]
-		);
-		const message = await insertHandoffMessage(client, {
-			sessionId: row.session_id,
-			handoffId,
-			sender: 'service',
-			source: 'handoff',
-			body: 'Petugas sudah bergabung. Balasan otomatis AI dijeda. AI dapat membantu petugas meninjau keterangan Anda.'
-		});
-		await recordAudit(
-			{
-				actorType: 'staff',
-				actorId: staff.staffId,
-				action: 'chat.handoff.claimed',
-				objectType: 'chat_handoff',
-				objectId: handoffId,
-				requestId
-			},
-			client
-		);
-		return {
-			handoff: mapStaffHandoff({ ...row, ...updated.rows[0] }, staff),
-			message,
-			latestMessageId: message.id
-		};
-	});
+  return claim(staff, { handoffId }, requestId);
 }
-
+async function snapshot(staff: StaffSession, handoffId: string) {
+  return query(api.handoffs.staffSnapshot, {
+    staffSessionId: staff.sessionId,
+    handoffId,
+  });
+}
 export async function getStaffChatThread(
-	staff: StaffSession,
-	handoffId: string,
-	requestId?: string | null
+  staff: StaffSession,
+  handoffId: string,
+  requestId?: string | null,
 ) {
-	const row = await loadStaffHandoff(db, handoffId);
-	assertThreadAvailable(row);
-	assertStaffCanAccess(staff, row);
-	const messages = await sessionMessages(row.session_id);
-	await recordAudit({
-		actorType: 'staff',
-		actorId: staff.staffId,
-		action: 'staff.chat.viewed',
-		objectType: 'chat_handoff',
-		objectId: handoffId,
-		requestId,
-		metadata: { messageCount: messages.length, status: row.status }
-	});
-	return {
-		handoff: mapStaffHandoff(row, staff),
-		messages,
-		latestMessageId: messages.at(-1)?.id ?? null
-	};
+  const s = await snapshot(staff, handoffId);
+  await recordAudit({
+    actorType: "staff",
+    actorId: staff.staffId,
+    action: "staff.chat.viewed",
+    objectType: "chat_handoff",
+    objectId: handoffId,
+    requestId,
+    metadata: { messageCount: s.messages.length },
+  });
+  return {
+    handoff: mapStaff(s.handoff, staff, s.claimedByName),
+    messages: mapMessages(s.messages),
+    latestMessageId: s.messages.at(-1)?.id ?? null,
+  };
 }
-
 export async function getStaffChatMessages(
-	staff: StaffSession,
-	handoffId: string,
-	after?: string | null
+  staff: StaffSession,
+  handoffId: string,
+  after?: string | null,
 ) {
-	const row = await loadStaffHandoff(db, handoffId);
-	assertThreadAvailable(row);
-	assertStaffCanAccess(staff, row);
-	const messages = await sessionMessages(row.session_id, after);
-	return {
-		handoff: mapStaffHandoff(row, staff),
-		messages,
-		latestMessageId: messages.at(-1)?.id ?? after ?? null
-	};
+  const s = await snapshot(staff, handoffId);
+  const rows = afterCursor(s.messages, after);
+  return {
+    handoff: mapStaff(s.handoff, staff, s.claimedByName),
+    messages: mapMessages(rows),
+    latestMessageId: rows.at(-1)?.id ?? after ?? null,
+  };
 }
-
 export async function sendStaffChatMessage(
-	staff: StaffSession,
-	handoffId: string,
-	body: string,
-	requestId?: string | null
+  staff: StaffSession,
+  handoffId: string,
+  body: string,
+  requestId?: string | null,
 ) {
-	return transaction(async (client) => {
-		const row = await loadStaffHandoff(client, handoffId, true);
-		assertStaffCanAccess(staff, row);
-		if (row.status !== 'active') {
-			throw new HandoffServiceError(409, 'handoff_not_active', 'Percakapan ini tidak aktif.');
-		}
-		const message = await insertHandoffMessage(client, {
-			sessionId: row.session_id,
-			handoffId,
-			sender: 'staff',
-			source: 'staff',
-			body,
-			staffId: staff.staffId
-		});
-		await recordAudit(
-			{
-				actorType: 'staff',
-				actorId: staff.staffId,
-				action: 'staff.chat.replied',
-				objectType: 'chat_handoff',
-				objectId: handoffId,
-				requestId
-			},
-			client
-		);
-		return { message };
-	});
+  return {
+    message: mapMessage(
+      await mutate(api.handoffs.send, {
+        staffSessionId: staff.sessionId,
+        handoffId,
+        message: serviceMessage(body.trim()),
+        requestId: requestId ?? undefined,
+      }),
+    ),
+  };
 }
-
+export async function getStaffChatAssistance(
+  staff: StaffSession,
+  handoffId: string,
+  requestId?: string | null,
+  refresh = false,
+) {
+  const s = await snapshot(staff, handoffId);
+  if (s.handoff.status !== "active")
+    throw new BackendError(
+      409,
+      "handoff_not_active",
+      "Percakapan ini tidak aktif.",
+    );
+  await recordAudit({
+    actorType: "staff",
+    actorId: staff.staffId,
+    action: "staff.chat.assistance_viewed",
+    objectType: "chat_handoff",
+    objectId: handoffId,
+    requestId,
+  });
+  const previous = readAssistance(s.assistance);
+  if (!refresh && s.assistance?.revision === s.session.messageSeq && previous)
+    return previous;
+  const assistance = await makeStaffAssistance(
+    mapMessages(s.messages),
+    previous,
+  );
+  await mutate(api.handoffs.saveAssistance, {
+    staffSessionId: staff.sessionId,
+    handoffId,
+    revision: s.session.messageSeq,
+    content: seal(assistance, "staff_assistance"),
+  });
+  return assistance;
+}
+async function finish(
+  target: { sessionId: string } | { staff: StaffSession; handoffId: string },
+  requestId?: string | null,
+) {
+  const isStaff = "staff" in target;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const s = isStaff
+      ? await snapshot(target.staff, target.handoffId)
+      : await query(api.handoffs.reporterSnapshot, {
+          sessionId: target.sessionId,
+        });
+    if (!s.handoff)
+      throw new BackendError(
+        409,
+        "handoff_not_open",
+        "Tidak ada bantuan petugas yang aktif.",
+      );
+    const content = finalizeStaffAssistance(
+      mapMessages(s.messages),
+      readAssistance(s.assistance),
+    );
+    try {
+      const r = await mutate(api.handoffs.finish, {
+        staffSessionId: isStaff ? target.staff.sessionId : undefined,
+        sessionId: isStaff ? undefined : target.sessionId,
+        handoffId: s.handoff.id,
+        revision: s.session.messageSeq,
+        content: seal(content, "staff_assistance"),
+        message: serviceMessage(
+          isStaff
+            ? "Percakapan dengan petugas sudah ditutup. Anda bisa melanjutkan draf atau meminta bantuan lagi."
+            : "Bantuan petugas diakhiri oleh pelapor. Anda bisa melanjutkan dengan panduan atau meminta bantuan lagi.",
+        ),
+        requestId: requestId ?? undefined,
+      });
+      return {
+        handoff: isStaff
+          ? mapStaff(r.handoff, target.staff, target.staff.displayName)
+          : mapHandoff(r.handoff),
+        message: mapMessage(r.message),
+        latestMessageId: r.message.id,
+      };
+    } catch (e) {
+      if (
+        !(e instanceof BackendError) ||
+        e.code !== "assistance_stale" ||
+        attempt === 2
+      )
+        throw e;
+    }
+  }
+  throw new BackendError(
+    409,
+    "assistance_stale",
+    "Ada pesan baru. Coba kembali.",
+  );
+}
 export async function closeStaffChat(
-	staff: StaffSession,
-	handoffId: string,
-	requestId?: string | null
+  staff: StaffSession,
+  handoffId: string,
+  requestId?: string | null,
 ) {
-	return transaction(async (client) => {
-		const row = await loadStaffHandoff(client, handoffId, true);
-		assertStaffCanAccess(staff, row);
-		if (row.status !== 'active') {
-			throw new HandoffServiceError(409, 'handoff_not_active', 'Percakapan ini tidak aktif.');
-		}
-		await finalizeConversationAssistance(client, row.session_id);
-		const updated = await client.query<HandoffRow>(
-			`UPDATE chat_handoffs
-			 SET status = 'closed', closed_by = $2, closed_at = now(), close_reason = 'staff_closed'
-			 WHERE id = $1 AND status = 'active'
-			 RETURNING *`,
-			[handoffId, staff.staffId]
-		);
-		const message = await insertHandoffMessage(client, {
-			sessionId: row.session_id,
-			handoffId,
-			sender: 'service',
-			source: 'handoff',
-			body: 'Percakapan dengan petugas sudah ditutup. Anda bisa melanjutkan dengan panduan atau memeriksa draf.'
-		});
-		await recordAudit(
-			{
-				actorType: 'staff',
-				actorId: staff.staffId,
-				action: 'staff.chat.closed',
-				objectType: 'chat_handoff',
-				objectId: handoffId,
-				requestId
-			},
-			client
-		);
-		return {
-			handoff: mapStaffHandoff({ ...row, ...updated.rows[0] }, staff),
-			message,
-			latestMessageId: message.id
-		};
-	});
+  return finish({ staff, handoffId }, requestId);
 }
-
-async function readAssistance(sessionId: string, client: Queryable = db) {
-	const result = await client.query<{ fingerprint: string; content_enc: Buffer; content_iv: Buffer; content_tag: Buffer }>(
-		'SELECT fingerprint, content_enc, content_iv, content_tag FROM chat_assistance WHERE session_id = $1', [sessionId]
-	);
-	const row = result.rows[0];
-	if (!row) return null;
-	return { fingerprint: row.fingerprint, assistance: JSON.parse(decrypt(row.content_enc, row.content_iv, row.content_tag, 'staff_assistance')) as StaffAssistance };
-}
-
-function assistanceFingerprint(messages: HandoffThreadMessage[]) {
-	return createHash('sha256').update(JSON.stringify(messages.filter((message) => message.source !== 'handoff').map(({ id, source, body }) => ({ id, source, body })))).digest('hex');
-}
-
-const assistanceInFlight = new Map<string, Promise<StaffAssistance>>();
-
-async function saveAssistance(client: Queryable, sessionId: string, fingerprint: string, assistance: StaffAssistance) {
-	const content = encrypt(assistance, 'staff_assistance');
-	await client.query(`INSERT INTO chat_assistance (session_id, fingerprint, content_enc, content_iv, content_tag)
-		VALUES ($1,$2,$3,$4,$5) ON CONFLICT (session_id) DO UPDATE SET fingerprint = EXCLUDED.fingerprint,
-		content_enc = EXCLUDED.content_enc, content_iv = EXCLUDED.content_iv, content_tag = EXCLUDED.content_tag, updated_at = now()`,
-		[sessionId, fingerprint, content.encrypted, content.iv, content.tag]);
-}
-
-async function finalizeConversationAssistance(client: Queryable, sessionId: string) {
-	const history = await sessionMessages(sessionId, null, client);
-	const previous = await readAssistance(sessionId, client);
-	const fingerprint = assistanceFingerprint(history);
-	if (previous?.fingerprint !== fingerprint) {
-		await saveAssistance(client, sessionId, fingerprint, finalizeStaffAssistance(history, previous?.assistance));
-	}
-}
-
-export async function getStaffChatAssistance(staff: StaffSession, handoffId: string, requestId?: string | null, refresh = false) {
-	const row = await loadStaffHandoff(db, handoffId);
-	assertStaffCanAccess(staff, row);
-	if (row.status !== 'active') throw new HandoffServiceError(409, 'handoff_not_active', 'Ambil percakapan aktif sebelum membuka panduan.');
-	const messages = await sessionMessages(row.session_id);
-	const fingerprint = assistanceFingerprint(messages);
-	await recordAudit({ actorType: 'staff', actorId: staff.staffId, action: 'staff.chat.assistance_viewed', objectType: 'chat_handoff', objectId: handoffId, requestId });
-	const cached = await readAssistance(row.session_id);
-	if (!refresh && cached?.fingerprint === fingerprint) return cached.assistance;
-	const key = `${handoffId}:${fingerprint}`;
-	const pending = assistanceInFlight.get(key);
-	if (pending) return pending;
-	if (assistanceInFlight.size >= 64) throw new HandoffServiceError(429, 'assistance_busy', 'Panduan sedang sibuk. Coba lagi sebentar.');
-	const work = (async () => {
-		const assistance = await makeStaffAssistance(messages, cached?.assistance);
-		return transaction(async (client) => {
-			const current = await loadStaffHandoff(client, handoffId, true);
-			assertStaffCanAccess(staff, current);
-			if (current.status !== 'active') throw new HandoffServiceError(409, 'handoff_not_active', 'Percakapan sudah ditutup.');
-			if (assistanceFingerprint(await sessionMessages(row.session_id, null, client)) !== fingerprint) {
-				throw new HandoffServiceError(409, 'assistance_stale', 'Ada pesan baru. Panduan akan diperbarui.');
-			}
-			await saveAssistance(client, row.session_id, fingerprint, assistance);
-			return assistance;
-		});
-	})();
-	assistanceInFlight.set(key, work);
-	try { return await work; } finally { assistanceInFlight.delete(key); }
+export async function cancelReporterHandoff(
+  session: ReporterSession,
+  requestId?: string | null,
+) {
+  return finish({ sessionId: session.id }, requestId);
 }

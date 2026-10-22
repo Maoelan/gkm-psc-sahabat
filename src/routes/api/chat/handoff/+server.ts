@@ -41,7 +41,7 @@ export async function POST({ cookies, request, locals }) {
 	if (!hasValidCsrf(request, session)) {
 		return json({ error: 'Token keamanan sesi tidak cocok.' }, { status: 403 });
 	}
-	if (!allowAttempt(`handoff-request:${session.id}`, 5, 10 * 60 * 1000)) {
+	if (!await allowAttempt(`handoff-request:${session.id}`, 5, 10 * 60 * 1000)) {
 		return json(
 			{ error: 'Terlalu banyak permintaan bantuan. Coba lagi beberapa menit lagi.' },
 			{ status: 429 }

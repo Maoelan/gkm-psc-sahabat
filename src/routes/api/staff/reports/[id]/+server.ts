@@ -7,7 +7,7 @@ export async function GET({ cookies, params }) {
 	if (staff instanceof Response) return staff;
 	try {
 		return json({
-			report: await getOfficerReport(staff.staffId, params.id, staff.roles.includes('admin'))
+			report: await getOfficerReport(staff, params.id)
 		});
 	} catch (error) {
 		if (error instanceof ReportServiceError) {
