@@ -2,12 +2,15 @@
 	import { page } from '$app/state';
 	import type { LayoutProps } from './$types';
 	import '../app.css';
+ import FirstVisit from '../lib/components/FirstVisit.svelte';
+ import ReportNotifications from '../lib/components/ReportNotifications.svelte';
 
 	let { children, data }: LayoutProps = $props();
 	let menuDialog: HTMLDialogElement;
 	const staffArea = $derived(Boolean(data.staff) && (/^\/(petugas|admin)(\/|$)/.test(page.url.pathname) || page.url.pathname === '/rekap'));
 	const publicLinks = [
 		{ href: '/', label: 'Beranda' },
+		{ href: '/edukasi', label: 'Edukasi' },
 		{ href: '/panduan', label: 'Panduan melapor' },
 		{ href: '/chat', label: 'Buat laporan' }
 	];
@@ -15,8 +18,7 @@
 		{ href: '/petugas', label: 'Laporan masuk', help: 'Periksa dan catat keputusan' },
 		{ href: '/petugas/percakapan', label: 'Percakapan langsung', help: 'Bantu pelapor yang sedang menulis' },
 		...(data.staff?.roles.includes('admin') ? [
-			{ href: '/rekap', label: 'Rekap laporan', help: 'Lihat hasil dan unduh rekap' },
-			{ href: '/admin/nik', label: 'Data NIK', help: 'Identitas untuk tindak lanjut' }
+			{ href: '/rekap', label: 'Rekap dan identitas', help: 'Hasil, data korban, dan unduhan' }
 		] : [])
 	]);
 	const links = $derived(staffArea ? staffLinks : publicLinks);
@@ -37,10 +39,10 @@
 </script>
 
 <svelte:head>
-	<title>LAPOR AMAN | Layanan pengaduan</title>
+	<title>PSC SAHABAT | UPT Puskesmas Suranadi</title>
 	<meta
 		name="description"
-		content="Portal pengaduan LAPOR AMAN milik GKM PSC SAHABAT, UPT Puskesmas Suranadi."
+		content="PSC SAHABAT, pengaduan, pendampingan dan rujukan terpadu bagi perempuan dan anak korban kekerasan di wilayah kerja UPT Puskesmas Suranadi."
 	/>
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
@@ -49,13 +51,14 @@
 	<a class="skip-link" href="#main-content">Lewati ke isi utama</a>
 	<header class="topbar">
 		<div class="topbar-inner">
-			<a class="wordmark" href={staffArea ? '/petugas' : '/'} aria-label="LAPOR AMAN, beranda">
-				<img src="/brand/puskesmas-logo.png" alt="" width="40" height="44" />
-				<span><strong>LAPOR AMAN</strong><small>UPT Puskesmas Suranadi</small></span>
+			<a class="wordmark" href={staffArea ? '/petugas' : '/'} aria-label="PSC SAHABAT, beranda">
+				<img src="/brand/psc-sahabat.svg" alt="" width="44" height="48" />
+				<span><strong>PSC SAHABAT</strong><small>Pelaporan perempuan dan anak</small></span>
 			</a>
 			{#if staffArea}<span class="workspace-label">Ruang kerja petugas</span>
 			{:else}<nav class="desktop-nav" aria-label="Menu utama">{#each publicLinks as item}<a href={item.href} aria-current={page.url.pathname === item.href ? 'page' : undefined}>{item.label}</a>{/each}</nav>{/if}
 			<div class="header-actions">
+ {#if staffArea && data.staff}<ReportNotifications account={data.staff.username} />{/if}
 				{#if !staffArea}<a class="staff-entry" href={data.staff ? '/petugas' : '/masuk'}>{data.staff ? 'Ruang petugas' : 'Masuk petugas'}</a><button class="quick-exit" type="button" onclick={quickExit}>Keluar cepat</button>{/if}
 				<button class="menu-toggle" type="button" aria-label="Buka menu" onclick={() => menuDialog.showModal()}>Menu</button>
 			</div>
@@ -72,6 +75,9 @@
 			<div class="workspace-account"><strong>{data.staff?.displayName}</strong><span>Petugas layanan</span><a href="/">Buka portal publik</a><form method="POST" action="/masuk?/logout"><input type="hidden" name="csrfToken" value={data.staff?.csrfToken} /><button type="submit">Keluar akun</button></form></div>
 		</aside>
 	{:else}<div class="privacy-banner"><p>Gunakan perangkat yang aman. Cerita dapat diproses asisten AI NVIDIA. <a href="/panduan#privasi">Pelajari privasi Anda</a></p></div>{/if}
+	{#if !staffArea && page.url.pathname !== '/masuk'}<FirstVisit />{/if}
 	<main id="main-content" tabindex="-1">{@render children()}</main>
-	{#if !staffArea}<footer class="site-footer"><div class="footer-inner"><div><strong>LAPOR AMAN</strong><p>GKM PSC SAHABAT · UPT Puskesmas Suranadi</p></div><div class="footer-links"><a href="/panduan#privasi">Pemberitahuan privasi</a><a href="/masuk">Masuk petugas</a></div></div></footer>{/if}
+	{#if !staffArea}<footer class="site-footer"><div class="footer-inner"><div class="footer-institution"><img src="/brand/puskesmas-logo.png" width="44" height="48" alt="Logo Puskesmas" /><div><strong>UPT Puskesmas Suranadi</strong><p>PSC SAHABAT untuk wilayah kerja Puskesmas Suranadi.</p><p>© {new Date().getFullYear()} UPT Puskesmas Suranadi.</p></div></div><div class="footer-links"><a href="/edukasi">Edukasi</a><a href="/panduan#privasi">Pemberitahuan privasi</a><a href="https://puskesmassuranadi-dikes.lombokbaratkab.go.id/" target="_blank" rel="noopener noreferrer">Profil Puskesmas Suranadi</a><a href="/masuk">Masuk petugas</a></div></div></footer>{/if}
 </div>
+
+<style>.footer-institution{display:flex;align-items:flex-start;gap:16px}.footer-institution img{object-fit:contain;flex-shrink:0}.wordmark img{object-fit:contain}</style>

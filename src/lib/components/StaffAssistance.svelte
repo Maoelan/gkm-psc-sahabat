@@ -1,18 +1,16 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+
 	import { assistanceTopics, type StaffAssistance } from '../assistance';
 	let { assistance, loading, error, disabled, onrefresh, onuse }: {
 		assistance: StaffAssistance | null; loading: boolean; error: string; disabled: boolean;
 		onrefresh: () => void; onuse: (question: string) => void;
 	} = $props();
-	let expanded = $state(true);
-	onMount(() => { expanded = !window.matchMedia('(max-width: 900px)').matches; });
+
 </script>
 
 <aside class="assistance-panel" aria-label="Panduan petugas">
-	<details bind:open={expanded}>
-		<summary>Panduan petugas</summary>
-		<p class="intro">Baca kutipan pelapor. Ini bahan pemeriksaan, belum laporan yang dikonfirmasi.</p>
+	<h3 class="guidance-title">Panduan petugas</h3>
+		<p class="intro">Periksa satu saran berikut. Anda yang mengirim balasannya.</p>
 		{#if loading}<p class="update-state" role="status">Membaca percakapan terbaru…</p>{/if}
 		{#if error}<p class="assist-error" role="alert">{error}</p>{/if}
 		{#if assistance}
@@ -24,7 +22,7 @@
 					<small>Masuk ke kotak balasan. Periksa atau ubah sebelum dikirim.</small>
 				</section>
 			{:else}<p class="complete-note">Bagian utama sudah memiliki keterangan atau ditandai belum diketahui. Pelapor tetap dapat menambah cerita dan memeriksa draf.</p>{/if}
-			<dl class="collected-information">
+			<details class="collected-summary"><summary>Lihat kelengkapan dan kutipan pelapor</summary><dl class="collected-information">
 				{#each assistanceTopics as topic}
 					{@const item = assistance.fields[topic.key]}
 					<div data-topic={topic.key}>
@@ -32,15 +30,14 @@
 						<dd>{#if item.quote}<blockquote>“{item.quote}”</blockquote><small>Kutipan pelapor</small>{:else}Boleh tetap kosong jika pelapor belum tahu atau belum siap.{/if}</dd>
 					</div>
 				{/each}
-			</dl>
+			</dl></details>
 			<p class="source-note">{assistance.source === 'nvidia' ? 'Dibantu AI. Cocokkan dengan percakapan.' : 'Panduan cadangan aktif. AI tidak tersedia atau hasilnya tidak dapat dipakai.'} Data identitas dan kontak diisi pada formulir pelapor.</p>
 		{:else if !loading && !error}<p class="intro">Buka panduan untuk melihat bagian laporan yang perlu diperjelas.</p>{/if}
 		<button class="link-button" type="button" disabled={loading || disabled} onclick={onrefresh}>{loading ? 'Memperbarui panduan…' : 'Perbarui panduan'}</button>
-	</details>
 </aside>
 
 <style>
-	.assistance-panel { padding:18px; background:var(--surface); min-width:0; height:clamp(280px,45dvh,480px); overflow-y:auto; }
+	.assistance-panel { padding:18px; background:var(--surface); min-width:0; height:auto; overflow:visible; }
 	details { border:0; }
 	summary { padding:0 0 12px; font-size:1rem; color:var(--navy); }
 	.intro,.source-note,.complete-note { font-size:.82rem; color:var(--muted); margin:0 0 16px; }
@@ -53,7 +50,8 @@
 	blockquote { margin:0 0 4px; color:var(--ink); white-space:pre-wrap; }
 	small { display:block; font-size:.75rem; color:var(--muted); }
 	.suggested-question { border-top:1px solid var(--border); padding-top:16px; margin-top:8px; }
-	h3 { font-size:.9rem; margin:0; }
+	.guidance-title { margin:0 0 8px; }
+ h3 { font-size:.9rem; margin:0; }
 	.suggested-question p { font-size:.9rem; margin:10px 0 14px; }
 	.suggested-question button { width:100%; }
 	.suggested-question small { margin-top:8px; }

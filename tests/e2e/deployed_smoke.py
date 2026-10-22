@@ -29,7 +29,14 @@ try:
         assert reporter.request.get(base + '/api/health').json() == {'status': 'ok'}
         assert reporter.request.get(base + '/api/staff/reports').status == 401
         assert reporter.request.post(base + '/api/chat/session', headers={'Origin': 'https://outside.example.test'}, data={}).status == 403
+        expect(home.get_by_role('dialog', name='Selamat datang di PSC SAHABAT')).to_be_visible()
+        home.screenshot(path=str(output / 'evaluation-intro-mobile.png'), full_page=True)
+        home.get_by_role('button', name='Saya mengerti, lanjutkan').click()
+        expect(home.get_by_role('heading', level=1)).to_have_text('PSC SAHABAT')
         home.screenshot(path=str(output / 'evaluation-home-mobile.png'), full_page=True)
+        home.goto(base + '/edukasi', wait_until='domcontentloaded')
+        expect(home.locator('.education-types article')).to_have_count(6)
+        home.screenshot(path=str(output / 'evaluation-education-mobile.png'), full_page=True)
 
         stage = 'reporter session and provider turn'
         session_response = reporter.request.post(base + '/api/chat/session', headers={'Origin': base}, data={})
@@ -79,9 +86,10 @@ try:
 
         stage = 'draft and idempotent submission'
         draft_input = {'victimName': 'Uji Deployment (Data Sintetis)', 'victimNik': '0000000000000001', 'relation': 'Diri sendiri', 'story': narrative, 'incidentTime': 'Kemarin sore', 'incidentLocation': 'Rumah simulasi', 'need': 'Pendampingan petugas (latihan)', 'safeContact': 'no', 'contactDetails': ''}
+        draft_input['profile'] = {'birthDate':'2000-02-20', 'coordination':'Sudah', 'coordinationDetails':'Koordinasi sintetis untuk pengujian', 'violenceTypes':['physical','psychological']}
         draft = reporter.request.post(base + '/api/chat/draft', headers=reporter_headers, data=draft_input)
         assert draft.status == 201
-        submit = {**draft.json(), 'idempotencyKey': str(uuid.uuid4()), 'privacyRead': True, 'noticeVersion': '2026-10-20'}
+        submit = {**draft.json(), 'idempotencyKey': str(uuid.uuid4()), 'privacyRead': True, 'noticeVersion': '2026-10-22'}
         submitted = reporter.request.post(base + '/api/reports', headers=reporter_headers, data=submit)
         assert submitted.status == 201
         result = submitted.json()
@@ -92,6 +100,9 @@ try:
         prefix = base + '/api/staff/reports/' + reference
         assert reporter.request.get(prefix + '/nik').status == 401
         assert staff.request.get(prefix + '/nik').json()['nik'] == '0000000000000001'
+        assert staff.request.get(prefix).json()['report']['profile']['coordinationDetails'] == 'Koordinasi sintetis untuk pengujian'
+        assert staff.request.get(prefix + '/contact').json()['contact'] is None
+        assert reference in [r['referenceCode'] for r in staff.request.get(base + '/api/staff/notifications').json()['reports']]
         assert any('Kemarin sore' in m['body'] for m in staff.request.get(prefix + '/chat').json()['messages'])
         decision = staff.request.post(prefix + '/decision', headers=staff_headers, data={'decision': 'follow_up_not_required', 'reason': 'Data sintetis untuk pemeriksaan deployment, bukan laporan kejadian nyata.'})
         assert decision.status == 200
@@ -103,13 +114,24 @@ try:
         page.get_by_role('searchbox', name='Cari laporan').fill(reference)
         expect(page.locator('.recap-table')).to_contain_text('Uji Deployment (Data Sintetis)')
         page.screenshot(path=str(output / 'evaluation-recap-desktop.png'), full_page=True)
+        stage = 'confirmed deletion of this smoke test record only'
+        page.get_by_role('button', name='Lihat detail', exact=True).click()
+        page.get_by_role('button', name='Hapus laporan', exact=True).click()
+        deletion = page.get_by_role('dialog', name='Hapus laporan ini?')
+        expect(deletion.get_by_role('button', name='Hapus permanen')).to_be_disabled()
+        deletion.get_by_label('Ketik kode laporan untuk konfirmasi').fill(reference)
+        deletion.get_by_label('Alasan penghapusan').fill('Pembersihan laporan sintetis dari uji deployment ini.')
+        deletion.get_by_role('button', name='Hapus permanen').click()
+        expect(deletion).not_to_be_visible()
+        assert staff.request.get(prefix).status == 404
+        stage = 'logout'
         logout = staff.request.post(base + '/api/staff/logout', headers=staff_headers, data={})
         assert logout.status in [200, 204]
         assert staff.request.get(base + '/api/staff/reports').status == 401
         reporter.request.delete(base + '/api/chat/session', headers=reporter_headers)
         browser.close()
         print('HOSTED_SMOKE_OK: HTTPS, security headers, session cookies, staff login, private guidance, manual sending, finalized fields, idempotent submission, decision, NIK, transcript, export and logout.')
-        print('Synthetic evaluation reference: ' + reference)
+        print('Deleted synthetic evaluation reference: ' + reference)
         print('Artifacts: ' + str(output))
 except Exception as error:
     print('HOSTED_SMOKE_FAILED: ' + stage + ' (' + type(error).__name__ + '). Private details withheld.', file=sys.stderr)

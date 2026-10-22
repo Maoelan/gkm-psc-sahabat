@@ -12,6 +12,8 @@ import * as reports from "../../src/lib/server/reports";
 import { hashPassword } from "../../src/lib/server/crypto";
 import { allowAttempt } from "../../src/lib/server/rate-limit";
 import { POST as turn } from "../../src/routes/api/chat/turn/+server";
+import { DELETE as deleteReport } from "../../src/routes/api/staff/reports/[id]/+server";
+import { emptyVictimProfile } from "../../src/lib/victim";
 
 const transport = vi.hoisted(() => ({ query: vi.fn(), mutation: vi.fn() }));
 vi.mock("convex/browser", () => ({
@@ -138,6 +140,166 @@ afterEach(() => {
 });
 
 describe("Convex lifecycle", () => {
+  it("persists optional victim details encrypted and returns them to authorized reviewers", async () => {
+    const { session } = await reporter();
+    const profile = {
+      ...emptyVictimProfile(),
+      address: "Alamat latihan privat",
+      parentName: "Wali Latihan",
+      birthDate: "2000-01-01",
+      coordination: "Sudah",
+      coordinationDetails: "Kepolisian",
+      violenceTypes: ["physical"],
+    };
+    const draft = await reports.createDraft(session.id, {
+      ...content,
+      victimName: "",
+      profile,
+    });
+    const report = await reports.submitReport(session, {
+      ...draft,
+      idempotencyKey: randomUUID(),
+    });
+    const result = await reports.getOfficerReport(staff, report.referenceCode);
+    expect(result.profile).toEqual(profile);
+    expect(result.victimName).toBe("Nama belum diisi");
+    const stored = await t.run((ctx) => ctx.db.query("reports").collect());
+    expect(JSON.stringify(stored)).not.toContain(profile.address);
+  });
+  it("requires admin, CSRF and an exact confirmation before deleting report data", async () => {
+    const report = await submitted();
+    const event = (token: string, confirmation: string) =>
+      ({
+        cookies: staffCookies,
+        params: { id: report.referenceCode },
+        locals: { requestId: randomUUID() },
+        request: new Request(
+          "http://localhost/api/staff/reports/" + report.referenceCode,
+          {
+            method: "DELETE",
+            headers: {
+              "Content-Type": "application/json",
+              "x-csrf-token": token,
+            },
+            body: JSON.stringify({
+              confirmation,
+              reason: "Penghapusan data latihan.",
+            }),
+          },
+        ),
+      }) as Parameters<typeof deleteReport>[0];
+    expect(
+      (await deleteReport(event("wrong", report.referenceCode))).status,
+    ).toBe(403);
+    expect((await deleteReport(event(staff.csrfToken, "wrong"))).status).toBe(
+      422,
+    );
+    const own = await t.run((ctx) =>
+      ctx.db
+        .query("staff")
+        .withIndex("by_uuid", (q) => q.eq("id", staff.staffId))
+        .unique(),
+    );
+    await t.run((ctx) => ctx.db.patch(own!._id, { roles: ["petugas"] }));
+    expect(
+      (await deleteReport(event(staff.csrfToken, report.referenceCode))).status,
+    ).toBe(403);
+    await t.run((ctx) =>
+      ctx.db.patch(own!._id, { roles: ["petugas", "admin"] }),
+    );
+    expect(
+      (await deleteReport(event(staff.csrfToken, report.referenceCode))).status,
+    ).toBe(200);
+  });
+  it("removes linked identity, transcript, draft and notes while preserving unrelated reports and an encrypted audit reason", async () => {
+    const { session, cookies } = await reporter();
+    await userMessage(session.id);
+    const draft = await reports.createDraft(session.id, content);
+    const removed = await reports.submitReport(session, {
+      ...draft,
+      idempotencyKey: randomUUID(),
+    });
+    await reports.saveReviewNote(
+      staff,
+      removed.referenceCode,
+      "Catatan privat latihan.",
+    );
+    const kept = await submitted();
+    await t.mutation(api.reports.remove, {
+      key: serverKey,
+      staffSessionId: staff.sessionId,
+      referenceCode: removed.referenceCode,
+      confirmation: removed.referenceCode,
+      reason: seal("Alasan privat latihan.", "deletion_reason"),
+    });
+    expect(await sessions.requireSession(cookies)).toBeNull();
+    for (const table of [
+      "messages",
+      "drafts",
+      "handoffs",
+      "assistance",
+    ] as const) {
+      const rows = await t.run((ctx) => ctx.db.query(table).collect());
+      expect(rows.some((r) => r.sessionId === session.id)).toBe(false);
+    }
+    expect(
+      await t.run((ctx) => ctx.db.query("reviews").collect()),
+    ).toHaveLength(0);
+    const remaining = await reports.getRecapReports(staff);
+    expect(remaining.map((r) => r.id)).toEqual([kept.referenceCode]);
+    expect(
+      (
+        await t.query(api.reports.notifications, {
+          key: serverKey,
+          staffSessionId: staff.sessionId,
+        })
+      ).map((r) => r.referenceCode),
+    ).toEqual([kept.referenceCode]);
+    const audit = await t.run((ctx) => ctx.db.query("audit").collect());
+    expect(audit.some((r) => r.action === "report.deleted")).toBe(true);
+    expect(JSON.stringify(audit)).not.toContain("Alasan privat latihan.");
+  });
+  it("restricts notification metadata and contact reveal to the stored staff assignment", async () => {
+    const report = await submitted();
+    const owner = await t.run((ctx) =>
+      ctx.db
+        .query("staff")
+        .withIndex("by_uuid", (q) => q.eq("id", staff.staffId))
+        .unique(),
+    );
+    await t.run((ctx) => ctx.db.patch(owner!._id, { roles: ["petugas"] }));
+    expect(
+      await t.mutation(api.reports.contact, {
+        key: serverKey,
+        staffSessionId: staff.sessionId,
+        referenceCode: report.referenceCode,
+      }),
+    ).toBeNull();
+    const row = await t.run((ctx) =>
+      ctx.db
+        .query("reports")
+        .withIndex("by_reference", (q) =>
+          q.eq("referenceCode", report.referenceCode),
+        )
+        .unique(),
+    );
+    await t.run((ctx) =>
+      ctx.db.patch(row!._id, { assignedTo: "another-staff" }),
+    );
+    expect(
+      await t.query(api.reports.notifications, {
+        key: serverKey,
+        staffSessionId: staff.sessionId,
+      }),
+    ).toEqual([]);
+    await expect(
+      t.mutation(api.reports.contact, {
+        key: serverKey,
+        staffSessionId: staff.sessionId,
+        referenceCode: report.referenceCode,
+      }),
+    ).rejects.toThrow("Laporan tidak ditemukan");
+  });
   it("rejects direct backend access without the application server key", async () => {
     await expect(
       t.query(api.sessions.health, { key: "invalid" }),
@@ -205,7 +367,7 @@ describe("Convex lifecycle", () => {
       ...draft,
       idempotencyKey: randomUUID(),
       privacyRead: true,
-      noticeVersion: "2026-10-20",
+      noticeVersion: "2026-10-22",
     };
     const result = await reports.submitReport(session, input);
     expect(await reports.submitReport(session, input)).toEqual(result);
@@ -457,36 +619,68 @@ describe("Convex lifecycle", () => {
       await t.run((ctx) => ctx.db.query("assistance").collect()),
     ).toHaveLength(0);
   });
-  it.each(["ai", "operator"] as const)("answers service questions with AI and retained history in %s mode", async (mode) => {
-    const { session, cookies } = await reporter(mode);
-    await userMessage(session.id);
-    vi.stubEnv("AI_ENABLED", "true");
-    vi.stubEnv("NVIDIA_API_KEY", "test-key");
-    const provider = vi.fn(async () => Response.json({ choices: [{ message: { content: JSON.stringify({
-      reply: "Laporan dapat dibaca petugas yang ditugaskan dan admin.",
-      next_field: "incident_time",
-      question: "Kapan kira-kira kejadian itu terjadi?",
-      extracted_fields: {}
-    }) } }] }));
-    vi.stubGlobal("fetch", provider);
-    const response = await turn({
-      cookies,
-      request: new Request("http://localhost/api/chat/turn", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-csrf-token": session.csrfToken },
-        body: JSON.stringify({ story: content.story, userMessage: "Siapa yang bisa membaca laporan saya?" })
-      }),
-      locals: { requestId: randomUUID() }
-    } as Parameters<typeof turn>[0]);
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ source: "nvidia", message: expect.stringContaining("admin"), fields: { incidentTime: "" } });
-    expect(provider).toHaveBeenCalledOnce();
-    const request = JSON.parse((provider.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
-    expect(request.chat_template_kwargs.enable_thinking).toBe(false);
-    expect(JSON.parse(request.messages[1].content).recent_messages).toEqual(expect.arrayContaining([
-      expect.objectContaining({ role: "user", body: "Cerita sintetis di rumah." })
-    ]));
-  });
+  it.each(["ai", "operator"] as const)(
+    "answers service questions with AI and retained history in %s mode",
+    async (mode) => {
+      const { session, cookies } = await reporter(mode);
+      await userMessage(session.id);
+      vi.stubEnv("AI_ENABLED", "true");
+      vi.stubEnv("NVIDIA_API_KEY", "test-key");
+      const provider = vi.fn(async () =>
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  reply:
+                    "Laporan dapat dibaca petugas yang ditugaskan dan admin.",
+                  next_field: "incident_time",
+                  question: "Kapan kira-kira kejadian itu terjadi?",
+                  extracted_fields: {},
+                }),
+              },
+            },
+          ],
+        }),
+      );
+      vi.stubGlobal("fetch", provider);
+      const response = await turn({
+        cookies,
+        request: new Request("http://localhost/api/chat/turn", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-csrf-token": session.csrfToken,
+          },
+          body: JSON.stringify({
+            story: content.story,
+            userMessage: "Siapa yang bisa membaca laporan saya?",
+          }),
+        }),
+        locals: { requestId: randomUUID() },
+      } as Parameters<typeof turn>[0]);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        source: "nvidia",
+        message: expect.stringContaining("admin"),
+        fields: { incidentTime: "" },
+      });
+      expect(provider).toHaveBeenCalledOnce();
+      const request = JSON.parse(
+        (provider.mock.calls[0] as unknown as [string, RequestInit])[1]
+          .body as string,
+      );
+      expect(request.chat_template_kwargs.enable_thinking).toBe(false);
+      expect(JSON.parse(request.messages[1].content).recent_messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "user",
+            body: "Cerita sintetis di rumah.",
+          }),
+        ]),
+      );
+    },
+  );
   it("does not call the public AI while staff assistance is active during service hours", async () => {
     const { session, cookies } = await reporter("operator");
     await userMessage(session.id);
@@ -499,71 +693,87 @@ describe("Convex lifecycle", () => {
       cookies,
       request: new Request("http://localhost/api/chat/turn", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-csrf-token": session.csrfToken },
-        body: JSON.stringify({ story: content.story, userMessage: "Ada keterangan tambahan." })
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": session.csrfToken,
+        },
+        body: JSON.stringify({
+          story: content.story,
+          userMessage: "Ada keterangan tambahan.",
+        }),
       }),
-      locals: { requestId: randomUUID() }
+      locals: { requestId: randomUUID() },
     } as Parameters<typeof turn>[0]);
     expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({ code: "handoff_open", accepted: true });
+    expect(await response.json()).toMatchObject({
+      code: "handoff_open",
+      accepted: true,
+    });
     expect(provider).not.toHaveBeenCalled();
   });
-  it.each(["ai", "operator"] as const)("does not save an AI response after the reporter ends a %s session", async (mode) => {
-    const { session, cookies } = await reporter(mode);
-    const provider = deferredProvider();
-    const response = turn({
-      cookies,
-      request: new Request("http://localhost/api/chat/turn", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-csrf-token": session.csrfToken,
-        },
-        body: JSON.stringify({
-          story: content.story,
-          userMessage: content.story,
+  it.each(["ai", "operator"] as const)(
+    "does not save an AI response after the reporter ends a %s session",
+    async (mode) => {
+      const { session, cookies } = await reporter(mode);
+      const provider = deferredProvider();
+      const response = turn({
+        cookies,
+        request: new Request("http://localhost/api/chat/turn", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-csrf-token": session.csrfToken,
+          },
+          body: JSON.stringify({
+            story: content.story,
+            userMessage: content.story,
+          }),
         }),
-      }),
-      locals: { requestId: randomUUID() },
-    } as Parameters<typeof turn>[0]);
-    await provider.pending;
-    await sessions.endSession(cookies);
-    provider.release();
-    expect((await response).status).toBe(401);
-    expect(
-      await t.run((ctx) => ctx.db.query("messages").collect()),
-    ).toHaveLength(0);
-  });
-  it.each(["ai", "operator"] as const)("forwards the reporter message when staff takes over during provider work in %s mode", async (mode) => {
-    const { session, cookies } = await reporter(mode);
-    await userMessage(session.id);
-    const provider = deferredProvider();
-    const response = turn({
-      cookies,
-      request: new Request("http://localhost/api/chat/turn", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-csrf-token": session.csrfToken,
-        },
-        body: JSON.stringify({
-          story: content.story,
-          userMessage: "Ada keterangan tambahan saat pengambilalihan.",
+        locals: { requestId: randomUUID() },
+      } as Parameters<typeof turn>[0]);
+      await provider.pending;
+      await sessions.endSession(cookies);
+      provider.release();
+      expect((await response).status).toBe(401);
+      expect(
+        await t.run((ctx) => ctx.db.query("messages").collect()),
+      ).toHaveLength(0);
+    },
+  );
+  it.each(["ai", "operator"] as const)(
+    "forwards the reporter message when staff takes over during provider work in %s mode",
+    async (mode) => {
+      const { session, cookies } = await reporter(mode);
+      await userMessage(session.id);
+      const provider = deferredProvider();
+      const response = turn({
+        cookies,
+        request: new Request("http://localhost/api/chat/turn", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-csrf-token": session.csrfToken,
+          },
+          body: JSON.stringify({
+            story: content.story,
+            userMessage: "Ada keterangan tambahan saat pengambilalihan.",
+          }),
         }),
-      }),
-      locals: { requestId: randomUUID() },
-    } as Parameters<typeof turn>[0]);
-    await provider.pending;
-    await handoffs.takeoverChatSession(staff, session.id);
-    provider.release();
-    const r = await response;
-    expect(r.status).toBe(409);
-    const body = await r.json();
-    expect(body.accepted).toBe(true);
-    expect(
-      (await handoffs.getReporterHandoff(session.id)).messages.some(
-        (m) => m.id === body.userMessageId && m.body.includes("Ada keterangan"),
-      ),
-    ).toBe(true);
-  });
+        locals: { requestId: randomUUID() },
+      } as Parameters<typeof turn>[0]);
+      await provider.pending;
+      await handoffs.takeoverChatSession(staff, session.id);
+      provider.release();
+      const r = await response;
+      expect(r.status).toBe(409);
+      const body = await r.json();
+      expect(body.accepted).toBe(true);
+      expect(
+        (await handoffs.getReporterHandoff(session.id)).messages.some(
+          (m) =>
+            m.id === body.userMessageId && m.body.includes("Ada keterangan"),
+        ),
+      ).toBe(true);
+    },
+  );
 });

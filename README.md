@@ -1,6 +1,6 @@
-# LAPOR AMAN
+# PSC SAHABAT — LAPOR AMAN
 
-A reporting portal for GKM PSC SAHABAT, UPT Puskesmas Suranadi. Reporters describe incidents, request staff assistance, review drafts, and submit reports. Staff review assigned reports and record decisions; administrators access summaries and identity records.
+A reporting portal for PSC SAHABAT, UPT Puskesmas Suranadi, serving its health-center catchment area. The program identity is “Pengaduan, Pendampingan dan Rujukan Terpadu bagi Perempuan dan Anak Korban Kekerasan,” with the motto “Satu laporan, satu pendamping, satu jalur perlindungan.” Reporters describe incidents, request staff assistance, review drafts, and submit reports. Staff review assigned reports and record decisions; administrators access summaries and identity records.
 
 The application uses **SvelteKit 3, Svelte 5, and Convex**, with a **Vercel Node.js 24** deployment target. A Node adapter remains available for local production tests. The interface and user manuals are in Indonesian; this README is in English.
 
@@ -17,24 +17,29 @@ Evaluation portal: [lapor-aman-evaluation.vercel.app](https://lapor-aman-evaluat
 | Hosting | Vercel project `lapor-aman-evaluation`, Node.js 24 |
 | Persistence | Native Convex functions and database in a separate evaluation project |
 | AI assistance | Server-side NVIDIA requests with validated results and fallback guidance |
-| Notifications | Outbox simulation; no external WhatsApp delivery |
+| Notifications | In-app staff inbox alerts; outbox simulation without external WhatsApp delivery |
 | Releases | Manual deployment; GitHub pushes do not automatically publish the application |
 | Data | Synthetic evaluation records; the former local PostgreSQL database was not imported |
 
 The portal and backend run in the cloud and do not depend on a developer laptop staying on. Vercel's Production environment is used for the stable **evaluation** URL; that platform label does not mean this application is approved for operational use with real victim data. Preview deployments require their own backend, credentials, and encryption keys before use.
 
-The reporter, administrator/staff, and technical Word manuals are maintained separately from the public repository. Their screenshots use synthetic data. Credentials and private deployment configuration are not included in those manuals.
+The reporter, administrator/staff, and technical Word manuals are maintained separately from the public repository. Existing editions precede the PSC SAHABAT interface revision; their screenshots need refreshing before redistribution. Their screenshots use synthetic data. Credentials and private deployment configuration are not included in those manuals.
 
 ## Reporting and staff workflows
 
-- `/chat`: victim details, optional NIK (Indonesian national identification number), incident narrative, editable draft, privacy confirmation, and submission receipt with a copyable reference code.
+- `/`: PSC SAHABAT identity, program motto, Puskesmas affiliation, service scope, and a first-visit information dialog. The Puskesmas logo remains in the institutional footer; the PSC SAHABAT vector emblem also serves as the favicon.
+- `/edukasi`: a separate education page covering six groups from the supplied KTPA/TPPO material: physical, psychological, sexual, neglect, trafficking, and exploitation. Legal references link to official sources. This page does not determine legal classifications for individual cases.
+- `/chat`: chronology first, with optional and encouraged victim details, optional NIK, suspected violence types, prior coordination with other agencies, editable draft, privacy confirmation, and a copyable submission reference. Additional victim fields include date of birth, parents, address, gender, education, occupation, marital status, and pregnancy. Form identity fields are encrypted with report content and are not sent to AI.
+- Contact consent is requested after the narrative. If willing to be contacted, the reporter supplies their own safe number and contact limits, including when reporting on another person's behalf. Contact information is revealed through an audited action.
 - AI conversation: one permitted follow-up topic at a time, optional skipping, additional narrative, and explicit reporter control over when to review the draft. NVIDIA requests redact recognizable identity patterns; this does not guarantee anonymization. Fallback guidance works without an AI provider.
 - AI assistance works both during and outside staff service hours until a staff handoff opens. Service hours control new staff-assistance requests, rather than disabling the AI conversation. Provider requests disable internal thinking for these short JSON responses so the limited completion budget is available for the answer.
 - `/petugas`: report inbox with search, filters, review notes, decisions, and reasons. Non-administrator staff can access assigned reports only.
-- `/petugas/percakapan`: live handoff, staff replies, and a private guidance panel. Suggestions enter the composer for editing and manual sending. Automatic AI replies pause while a handoff is open.
+- `/petugas/percakapan`: live handoff, staff replies, and a private guidance panel showing one suggested question; completeness details are collapsed by default. Suggestions enter the composer for editing and manual sending. Automatic AI replies pause while a handoff is open.
 - Staff guidance validates narrative, approximate time, general location, and requested help against actual reporter messages. It distinguishes missing details from explicit unknown answers. Collected fields feed the reporter's editable draft and later confirmed summary.
 - `/rekap`: administrator summary and Excel export. `Rekap` excludes NIK; `Identitas` includes it for authorized administrators.
-- `/admin/nik`: administrator identity directory with audited access. Transcript access, guidance access, reviews, decisions, and handoff actions are also audited.
+- Identity access is integrated into report details and recap; the legacy `/admin/nik` URL redirects to `/rekap`. Transcript access, guidance access, reviews, decisions, contact reveal, identity reveal, and handoff actions are audited.
+- Administrators may permanently delete a report by entering its exact reference and a reason. The atomic operation removes its recap entry, identity, reporter session, drafts, messages, handoffs, assistance, reviews, and outbox events. An audit record with an encrypted reason remains. Previously downloaded files are unaffected.
+- Staff inbox notifications poll every 12 seconds while the page is visible, expose only submission metadata, and follow assignment permissions. Read status is local to the browser and account.
 - Convex mutations handle draft versions, idempotent submission, handoff transitions, final decisions, and shared rate-limit counters. A message sequence check rejects stale AI results and prevents late results from overwriting finalized guidance.
 - Sensitive content remains AES-256-GCM encrypted before storage in Convex. NIK uses a separate encryption key. Decryption and provider calls happen in SvelteKit server code.
 - Evaluation notifications are **outbox-only**: generic pending events are recorded, and no WhatsApp messages are sent. The former PostgreSQL worker is no longer used.
@@ -160,7 +165,7 @@ npm audit --audit-level=low
 
 Integration tests run native Convex functions through `convex-test` with isolated in-memory data. They cover authorization, expired/revoked sessions, shared rate limits, draft versions, submission idempotency, decisions, encrypted guidance, stale provider output, cancellation, and takeover during AI work. This is complemented by browser tests against an actual local Convex backend.
 
-The evaluation release was verified on **22 October 2026** with 73 unit tests, 23 Convex integration tests, Node and Vercel artifact builds, secret scans, and a hosted browser flow covering manual staff replies, draft confirmation, submission, decisions, identity access, Excel export, and logout. The dependency audit reported zero known vulnerabilities at that time. These checks are a release snapshot, not a guarantee of permanent security; rerun them after code or dependency changes.
+The evaluation release was verified on **22 October 2026** with 76 unit tests, 27 Convex integration tests, Node and Vercel artifact builds, secret scans, and a hosted browser flow covering manual staff replies, draft confirmation, submission, decisions, identity access, Excel export, and logout. The dependency audit reported zero known vulnerabilities at that time. These checks are a release snapshot, not a guarantee of permanent security; rerun them after code or dependency changes.
 
 For browser verification:
 
@@ -183,7 +188,7 @@ npm run build
 
 Production browser tests use port 5176 and their own build origin. The final regular build restores the local configured origin. Browser coverage includes responsive navigation, chat retries, handoff, private question editing and manual sending, draft confirmation, preserved edits, summaries, decisions, NIK, and Excel. Test screenshots and downloads contain synthetic data only.
 
-`tests/e2e/deployed_smoke.py` verifies an existing HTTPS evaluation deployment. It requires `EVALUATION_BASE_URL`, `DEMO_STAFF_ADMIN_PASSWORD`, and an explicit `ALLOW_EVALUATION_WRITE=true` opt-in. It creates a clearly marked synthetic report and decision, exercises staff guidance and export permissions, then logs out. Run it only against the intended mock environment; it is not a read-only probe.
+`tests/e2e/deployed_smoke.py` verifies an existing HTTPS evaluation deployment. It requires `EVALUATION_BASE_URL`, `DEMO_STAFF_ADMIN_PASSWORD`, and an explicit `ALLOW_EVALUATION_WRITE=true` opt-in. It creates a clearly marked synthetic report and decision, exercises staff guidance and export permissions, deletes only its own test record through the confirmation dialog, then logs out. Run it only against the intended mock environment; it is not a read-only probe.
 
 ## Security boundaries
 

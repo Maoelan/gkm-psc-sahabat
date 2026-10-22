@@ -89,9 +89,13 @@
 					bukan jaminan anonimisasi. Bila penyedia gagal, pertanyaan cadangan dipakai.
 				</li>
 				<li>
-					Nama korban dipakai pada alur laporan. NIK korban opsional; server hanya menampilkan NIK
+					Nama, NIK, tanggal lahir, orang tua, alamat, jenis kelamin, pendidikan, pekerjaan, status perkawinan,
+					kehamilan, serta koordinasi dengan pihak lain dapat diisi jika diketahui. Data korban ini opsional dan
+					terenkripsi saat disimpan. Kolom identitas tidak dikirim ke AI. Server hanya menampilkan NIK
 					penuh kepada akun berwenang dengan peran admin setelah tindakan dan mencatat aksesnya.
-					Jangan masukkan foto identitas atau alamat lengkap.
+					Jangan masukkan foto identitas. Tulis alamat pada formulir data korban, bukan di chat.
+					Nomor HP diminta setelah kronologi jika Anda bersedia dihubungi; gunakan kontak Anda sebagai pelapor,
+					termasuk saat melaporkan kejadian yang dialami orang lain. Petugas berwenang dapat membuka kontak dengan pencatatan akses.
 				</li>
 				<li>
 					Notifikasi petugas saat ini tercatat di antrean aplikasi. Pengiriman WhatsApp memerlukan

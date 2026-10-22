@@ -1,12 +1,9 @@
+import { emptyVictimProfile, type VictimProfile } from "../victim";
 import { randomBytes, randomUUID } from "node:crypto";
 import { api, query, mutate, seal, unseal, BackendError } from "./convex";
 import { isAiEnabled } from "./env";
 import { modeCopy, type ServiceMode } from "../service-mode";
-import {
-  maskSensitiveText,
-  type NikDirectoryEntry,
-  type TranscriptMessage,
-} from "../reports";
+import { maskSensitiveText, type TranscriptMessage } from "../reports";
 import { PRIVACY_NOTICE_VERSION, PRIVACY_PURPOSE } from "../privacy";
 import type { ReporterSession } from "./session";
 import type { StaffSession } from "./staff-auth";
@@ -16,6 +13,7 @@ export { BackendError as ReportServiceError };
 export type ReportStatus = "submitted" | "under_review" | "decision_recorded";
 export type Decision = "follow_up_required" | "follow_up_not_required";
 export type DraftInput = {
+  profile?: VictimProfile;
   victimName: string;
   victimNik: string;
   relation: string;
@@ -27,6 +25,7 @@ export type DraftInput = {
   contactDetails: string;
 };
 type ReportContent = {
+  profile?: VictimProfile;
   story: string;
   incidentTime: string;
   incidentLocation: string;
@@ -34,6 +33,7 @@ type ReportContent = {
   contactPreference: "yes" | "no";
 };
 export type OfficerReport = {
+  profile?: VictimProfile;
   id: string;
   victimName: string;
   relation: string;
@@ -57,6 +57,8 @@ export type RecapReport = Omit<
   "received" | "mode" | "modeLabel" | "story"
 > & { nikLast4: string | null };
 export type RecapExportRow = {
+  profile?: VictimProfile;
+  contact?: string;
   id: string;
   receivedAt: string;
   victimName: string;
@@ -97,7 +99,8 @@ function mapOfficer(row: ReportRow): OfficerReport {
   ) as ReportContent;
   return {
     id: row.referenceCode,
-    victimName: unseal(row.name, "victim_name"),
+    victimName: unseal(row.name, "victim_name") || "Nama belum diisi",
+    profile: content.profile,
     relation: unseal(row.relation, "relationship"),
     received: relativeReceived(row.submittedAt),
     receivedAt: new Date(row.submittedAt).toISOString(),
@@ -217,6 +220,7 @@ export async function submitReport(
         incidentLocation: content.incidentLocation || "Belum diketahui",
         need: content.need || "Belum diketahui",
         contactPreference: content.safeContact,
+        profile: content.profile ?? emptyVictimProfile(),
       },
       "report_content",
     ),
@@ -266,7 +270,7 @@ export async function recordDecision(
 }
 async function identities(
   staff: StaffSession,
-  purpose: "nik.view" | "nik.directory.viewed" | "recap.export",
+  purpose: "nik.view" | "recap.export",
   requestId?: string | null,
   referenceCode?: string,
 ) {
@@ -293,24 +297,6 @@ export async function getReportNik(
   )[0];
   return { nik: row.nik ? unseal(row.nik, "nik") : null };
 }
-export async function getNikDirectory(
-  staff: StaffSession,
-  requestId?: string | null,
-): Promise<NikDirectoryEntry[]> {
-  return (await identities(staff, "nik.directory.viewed", requestId)).map(
-    (row) => {
-      const r = mapRecap(row);
-      return {
-        id: r.id,
-        victimName: r.victimName,
-        nik: row.nik ? unseal(row.nik, "nik") : "",
-        receivedAt: r.receivedAt,
-        status: r.status,
-        statusLabel: r.statusLabel,
-      };
-    },
-  );
-}
 export async function getRecapExportRows(
   staff: StaffSession,
   requestId?: string | null,
@@ -321,6 +307,11 @@ export async function getRecapExportRows(
       id: r.id,
       receivedAt: r.receivedAt,
       victimName: r.victimName,
+      profile: r.profile,
+      contact:
+        row.safeContact && row.contact
+          ? unseal(row.contact, "contact_details")
+          : "",
       nik: row.nik ? unseal(row.nik, "nik") : "",
       relation: r.relation,
       need: r.need,

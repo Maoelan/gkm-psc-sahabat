@@ -9,6 +9,7 @@ import {
 import { env } from './env';
 
 export type EncryptionPurpose =
+  | 'deletion_reason'
 	| 'staff_assistance'
 	| 'chat_message'
 	| 'draft_content'

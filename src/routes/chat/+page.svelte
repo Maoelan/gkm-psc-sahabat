@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { dev } from '$app/env';
 	import { onMount, tick } from 'svelte';
+	import { hasContactNumber } from '../../lib/contact';
+	import VictimDetails from '../../lib/components/VictimDetails.svelte';
+	import { emptyVictimProfile } from '../../lib/victim';
 	import { modeCopy, SERVICE_HOURS_LABEL, type ServiceMode } from '../../lib/service-mode';
 	import { appendReportStory, isUnknownAnswer, STORY_LIMIT, MESSAGE_LIMIT, type AnswerField, type ChatFields } from '../../lib/chat';
 	import { isValidNik, maskNik, normalizeNik } from '../../lib/reports';
@@ -63,6 +66,7 @@
 	let safetyChoice = $state('');
 	let relation = $state('');
 	let victimName = $state('');
+	let victimProfile = $state(emptyVictimProfile());
 	let victimNik = $state('');
 	let story = $state('');
 	let incidentTime = $state('');
@@ -133,7 +137,7 @@
 			: addingStory
 				? 'Tambahkan bagian cerita yang belum sempat Anda tulis.'
 				: chatStep === 'story'
-					? 'Ceritakan dengan kata-kata sendiri. Boleh belum lengkap.'
+					? 'Ceritakan urutan kejadian dengan kata-kata sendiri. Waktu, tempat, dan kebutuhan boleh dilengkapi sambil bercerita.'
 					: chatStep === 'open'
 						? 'Tulis tanggapan, pertanyaan, atau tambahan cerita.'
 						: chatStep === 'time'
@@ -262,6 +266,7 @@
 	function draftPayload() {
 		return {
 			victimName: victimName.trim(),
+			profile: { ...victimProfile, reporterName: relation === 'Diri sendiri' ? victimName.trim() : victimProfile.reporterName, coordinationDetails: victimProfile.coordination === 'Sudah' ? victimProfile.coordinationDetails : '' },
 			victimNik: normalizeNik(victimNik),
 			relation,
 			story: story.trim(),
@@ -644,7 +649,7 @@
 			return;
 		}
 		const name = victimName.trim();
-		if (name.length < 2) {
+		if (name && name.length < 2) {
 			identityError = 'Tulis nama korban atau nama panggilan sedikitnya 2 karakter.';
 			nameInput?.focus();
 			return;
@@ -776,7 +781,7 @@
 		}
 		submitError = '';
 		const name = victimName.trim();
-		if (name.length < 2) {
+		if (name && name.length < 2) {
 			submitError = 'Tulis nama korban atau nama panggilan sedikitnya 2 karakter.';
 			nameReviewInput?.focus();
 			return;
@@ -794,6 +799,11 @@
 		if (!contactPreference) {
 			submitError = 'Pilih apakah Anda aman dihubungi sebelum mengirim.';
 			contactNo?.focus();
+			return;
+		}
+		if (contactPreference === 'yes' && !hasContactNumber(contactDetails)) {
+			submitError = 'Tulis nomor HP Anda sebagai pelapor, atau pilih tidak bersedia dihubungi.';
+			document.getElementById('contact-details')?.focus();
 			return;
 		}
 		if (!privacyRead) {
@@ -878,6 +888,7 @@
 		safetyChoice = '';
 		relation = '';
 		victimName = '';
+		victimProfile = emptyVictimProfile();
 		victimNik = '';
 		nikEditing = false;
 		story = '';
@@ -1017,8 +1028,7 @@
 			<section class="identity-card" aria-labelledby="identity-title">
 				<h2 id="identity-title" tabindex="-1" bind:this={identityHeading}>Sedikit tentang korban</h2>
 				<p class="identity-lead">
-					Nama korban wajib diisi. NIK opsional dan hanya dapat dilihat akun berwenang untuk
-					tindak lanjut.
+					Data korban dianjurkan untuk membantu pemeriksaan, tetapi boleh dikosongkan jika belum diketahui atau belum aman untuk disampaikan. NIK tetap opsional.
 				</p>
 
 				<fieldset class="relation-field">
@@ -1057,7 +1067,7 @@
 				</fieldset>
 
 				<div class="field">
-					<label for="victim-name">Nama lengkap atau nama panggilan korban</label>
+					<label for="victim-name">Nama lengkap atau nama panggilan korban (opsional)</label>
 					<input
 						bind:this={nameInput}
 						id="victim-name"
@@ -1093,6 +1103,7 @@
 				</div>
 				</details>
 
+				<VictimDetails bind:profile={victimProfile} {relation} prefix="initial" />
 				{#if identityError}<p class="form-error" role="alert">{identityError}</p>{/if}
 
 				<div class="identity-actions">
@@ -1105,7 +1116,7 @@
 		{/if}
 
 {#if stage === 'chat'}
-			<section class="chat-card" aria-label="Percakapan pengaduan">
+			<section class="chat-card chronology-chat" aria-label="Percakapan pengaduan">
 				<header class="chat-card-bar">
 					<div>
 						<h2>Percakapan</h2>
@@ -1455,7 +1466,8 @@
 				</section>
 
 				<section class="review-section contact-section" aria-labelledby="contact-title">
-					<h3 id="contact-title">Bolehkah petugas menghubungi Anda?</h3>
+					<VictimDetails bind:profile={victimProfile} {relation} prefix="review" />
+					<h3 id="contact-title">Apakah Anda bersedia dihubungi petugas?</h3>
 					<p>Petugas tidak akan menghubungi Anda tanpa izin. Pilih kondisi yang paling aman.</p>
 					<fieldset>
 						<legend class="sr-only">Apakah Anda aman dihubungi?</legend>
@@ -1477,7 +1489,7 @@
 								<input type="radio" bind:group={contactPreference} value="yes" />
 								<span
 									><strong>Aman dihubungi</strong><small
-										>Saya akan menulis cara dan waktu yang aman.</small
+										>Saya bersedia menuliskan kontak saya sebagai pelapor dan waktu yang aman.</small
 									></span
 								>
 							</label>
@@ -1485,7 +1497,7 @@
 					</fieldset>
 					{#if contactPreference === 'yes'}
 						<div class="field">
-							<label for="contact-details">Cara, waktu, dan batasan kontak yang aman</label>
+							<label for="contact-details">Nomor HP Anda sebagai pelapor, waktu, dan batasan kontak yang aman</label>
 							<textarea
 								id="contact-details"
 								rows="3"
@@ -1508,7 +1520,7 @@
 					<p>Cerita dan data Anda disimpan untuk pemeriksaan petugas. NIK tidak wajib. Asisten AI NVIDIA dapat memproses cerita setelah pola identitas yang jelas disamarkan; penyamaran tidak menjamin seluruh identitas terhapus.</p>
 					<details class="privacy-details"><summary>Baca data yang diproses dan batas akses</summary>					<ul>
 						<li>Tujuan: menyiapkan dan memeriksa pengaduan.</li>
-						<li>Data: cerita, ringkasan, nama/hubungan, NIK opsional, dan preferensi kontak.</li>
+						<li>Data: cerita, ringkasan, hubungan dengan korban, data korban opsional (termasuk tanggal lahir, alamat, orang tua, pendidikan, pekerjaan, status perkawinan, dan kehamilan), dugaan jenis kekerasan, koordinasi, serta izin dan kontak pelapor.</li>
 						<li>
 							Akses NIK: hanya akun berwenang dengan peran admin yang dapat membuka NIK. Daftar
 							meja petugas tidak menampilkan NIK. Setiap pembukaan dicatat dalam audit.
@@ -2272,4 +2284,7 @@
 		.report-steps li span { width:24px; height:24px; }
 		.receipt-actions { flex-direction:column; }
 	}
+
+ .chronology-chat .message-log { height:clamp(360px,55dvh,680px); max-height:none; }
+ @media(max-width:600px) { .chronology-chat .message-log { height:clamp(300px,48dvh,540px); } }
 </style>

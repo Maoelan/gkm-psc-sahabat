@@ -37,6 +37,17 @@ with sync_playwright() as p:
     assert reporter_context.request.post(base + '/api/chat/session', headers={'Origin': 'https://outside.test'}, data={}).status == 403
     assert reporter_context.request.post(base + '/api/staff/chats/00000000-0000-4000-8000-000000000000/assistance', data={}).status == 401
     assert reporter_context.request.post(base + '/api/chat/session', data='x' * (128 * 1024 + 1), headers={'Content-Type': 'application/json'}).status == 413
+    reporter.goto(base, wait_until='networkidle')
+    expect(reporter.get_by_role('dialog', name='Selamat datang di PSC SAHABAT')).to_be_visible()
+    capture(reporter, 'first-visit-mobile')
+    reporter.get_by_role('button', name='Saya mengerti, lanjutkan').click()
+    for width in [1440, 390, 320]:
+        reporter.set_viewport_size({'width':width, 'height':844})
+        capture(reporter, f'home-{width}')
+    reporter.goto(base + '/edukasi', wait_until='networkidle')
+    expect(reporter.locator('.education-types article')).to_have_count(6)
+    capture(reporter, 'education-mobile')
+    reporter.set_viewport_size({'width':390, 'height':844})
     response = reporter.goto(base + '/chat?mode=operator', wait_until='networkidle')
     assert response.headers['x-frame-options'] == 'DENY'
     assert response.headers['referrer-policy'] == 'same-origin'
@@ -47,6 +58,16 @@ with sync_playwright() as p:
     reporter.get_by_role('button', name='Ya, saya aman', exact=True).click()
     reporter.locator('input[value="Diri sendiri"]').check()
     reporter.locator('#victim-name').fill('Korban Uji Browser')
+    reporter.get_by_text('Lengkapi data korban dan kejadian', exact=False).click()
+    reporter.locator('#initial-birthDate').fill('2000-02-20')
+    reporter.locator('#initial-parentName').fill('Orang Tua Uji')
+    reporter.locator('#initial-address').fill('Alamat sintetis untuk pengujian')
+    reporter.locator('#initial-gender').select_option('Perempuan')
+    reporter.locator('#initial-coordination').select_option('Sudah')
+    reporter.locator('#initial-coordinationDetails').fill('Latihan koordinasi dinas sosial')
+    reporter.locator('input[type="checkbox"][value="physical"]').check()
+    capture(reporter, 'optional-profile-mobile')
+    reporter.get_by_text('Lengkapi data korban dan kejadian', exact=False).click()
     reporter.get_by_text('Isi NIK korban (opsional)', exact=True).click()
     reporter.locator('#victim-nik').fill('0000000000000001')
     with reporter.expect_response(lambda response: '/api/chat/session' in response.url and response.request.method == 'POST') as session_created:
@@ -133,7 +154,7 @@ with sync_playwright() as p:
     assert text.count('Saya juga diancam') == 1
     assert 'Siapa yang bisa melihat' not in text
     reporter.locator('input[type="radio"][value="no"]').check()
-    reporter.locator('input[type="checkbox"]').check()
+    reporter.locator('.privacy-check input').check()
     capture(reporter, 'review-mobile')
     assert not reporter.evaluate('document.documentElement.scrollWidth > innerWidth')
     reporter.get_by_role('button', name='Konfirmasi dan kirim laporan', exact=True).click()
@@ -182,6 +203,7 @@ with sync_playwright() as p:
     capture(staff, 'queue-decided-desktop')
     staff.goto(base + '/rekap', wait_until='networkidle')
     expect(staff.locator('.recap-table')).to_contain_text(reference)
+    expect(staff.get_by_role('link', name='1 laporan baru. Buka laporan masuk.')).to_be_visible()
     staff.get_by_role('searchbox', name='Cari laporan').fill('tidak-ada-hasil')
     expect(staff.get_by_role('heading', name='Tidak ada laporan pada filter ini')).to_be_visible()
     staff.get_by_role('button', name='Tampilkan semua', exact=True).click()
@@ -193,6 +215,8 @@ with sync_playwright() as p:
     staff.set_viewport_size({'width':1440, 'height':960})
     staff.get_by_role('button', name='Tampilkan NIK', exact=True).click()
     expect(staff.locator('.nik-value')).to_contain_text('0000 0000 0000 0001')
+    staff.get_by_text('Data korban dan koordinasi', exact=True).click()
+    expect(staff.locator('main')).to_contain_text('Latihan koordinasi dinas sosial')
     with staff.expect_download() as downloaded:
         staff.get_by_role('link', name='Unduh rekap Excel', exact=True).click()
     downloaded.value.save_as(str(out / 'rekap.xlsx'))
@@ -200,20 +224,22 @@ with sync_playwright() as p:
     with zipfile.ZipFile(out / 'rekap.xlsx') as workbook:
         assert b'0000000000000001' not in workbook.read('xl/worksheets/sheet1.xml')
         assert b'0000000000000001' in workbook.read('xl/worksheets/sheet2.xml')
+        assert b'Latihan koordinasi dinas sosial' in workbook.read('xl/worksheets/sheet2.xml')
     staff.goto(base + '/admin/nik', wait_until='networkidle')
-    expect(staff.locator('main')).to_contain_text('0000000000000001')
+    expect(staff).to_have_url(base + '/rekap')
     for width in [1440, 390, 320]:
         staff.set_viewport_size({'width':width, 'height':960 if width == 1440 else 844})
         capture(staff, f'nik-{width}')
     staff.set_viewport_size({'width':1440, 'height':960})
     # A second reporter supplies structured information entirely through the staff conversation.
     assisted_context = browser.new_context(viewport={'width':390, 'height':844})
+    assisted_context.add_init_script("localStorage.setItem('psc-sahabat-intro-v1','read')")
     assisted = assisted_context.new_page()
     assisted.on('pageerror', lambda exc: errors.append(str(exc)))
     assisted.goto(base + '/chat?mode=operator', wait_until='networkidle')
     assisted.get_by_role('button', name='Ya, saya aman', exact=True).click()
-    assisted.locator('input[value="Diri sendiri"]').check()
-    assisted.locator('#victim-name').fill('Korban Latihan Pendamping')
+    assisted.locator('input[value="Keluarga atau pendamping"]').check()
+    # Victim identity is optional; this reporter deliberately leaves it blank.
     assisted.get_by_role('button', name='Mulai bercerita', exact=True).click()
     expect(assisted.locator('#chat-answer')).to_be_visible()
     assisted.locator('#chat-answer').fill('Latihan pendamping petugas: saya mengalami kekerasan oleh orang yang saya kenal.')
@@ -243,6 +269,8 @@ with sync_playwright() as p:
         expect(assisted.locator('#chat-answer')).to_have_value('')
         expect(panel.locator('[data-topic="' + topic + '"]')).to_contain_text(answer)
         if topic == 'incidentTime':
+            panel.locator('summary').click()
+        if topic == 'incidentTime':
             capture(staff, 'staff-assistance-desktop')
             for width in [768,390,320]:
                 staff.set_viewport_size({'width':width,'height':844})
@@ -260,9 +288,12 @@ with sync_playwright() as p:
     assisted.get_by_label('Waktu kejadian', exact=True).fill('Kemarin sekitar pukul delapan')
     assisted.wait_for_timeout(3800)
     expect(assisted.get_by_label('Waktu kejadian', exact=True)).to_have_value('Kemarin sekitar pukul delapan')
-    assisted.locator('input[type="radio"][value="no"]').check()
-    assisted.locator('input[type="checkbox"]').check()
+    assisted.locator('input[type="radio"][value="yes"]').check()
+    assisted.locator('.privacy-check input').check()
     capture(assisted, 'assisted-review-mobile')
+    assisted.get_by_role('button', name='Konfirmasi dan kirim laporan', exact=True).click()
+    expect(assisted.locator('.submit-error')).to_contain_text('Tulis nomor HP Anda sebagai pelapor')
+    assisted.locator('#contact-details').fill('0000-0000-0000, kontak sintetis pelapor; hanya siang hari')
     assisted.get_by_role('button', name='Konfirmasi dan kirim laporan', exact=True).click()
     expect(assisted.get_by_role('heading', name='Laporan terkirim', exact=True)).to_be_visible()
     assisted_reference = assisted.locator('.receipt-facts .num').inner_text()
@@ -271,6 +302,21 @@ with sync_playwright() as p:
     staff.get_by_role('button', name='Lihat detail', exact=True).click()
     expect(staff.locator('.detail-facts')).to_contain_text('Kemarin sekitar pukul delapan')
     expect(staff.locator('.detail-facts')).to_contain_text('Pendampingan petugas')
+    expect(staff.locator('main')).to_contain_text('Nama belum diisi')
+    staff.get_by_role('button', name='Lihat kontak pelapor', exact=True).click()
+    expect(staff.locator('.report-identity')).to_contain_text('0000-0000-0000')
+    staff.get_by_role('button', name='Hapus laporan', exact=True).click()
+    deletion = staff.get_by_role('dialog', name='Hapus laporan ini?')
+    expect(deletion.get_by_role('button', name='Hapus permanen')).to_be_disabled()
+    deletion.get_by_label('Ketik kode laporan untuk konfirmasi').fill('kode-salah')
+    deletion.get_by_label('Alasan penghapusan').fill('Pembersihan data sintetis E2E')
+    expect(deletion.get_by_role('button', name='Hapus permanen')).to_be_disabled()
+    deletion.get_by_label('Ketik kode laporan untuk konfirmasi').fill(assisted_reference)
+    capture(staff, 'delete-confirmation')
+    deletion.get_by_role('button', name='Hapus permanen').click()
+    expect(deletion).not_to_be_visible()
+    expect(staff.locator('.recap-table')).not_to_contain_text(assisted_reference)
+    assert staff_context.request.get(base + '/api/staff/reports/' + assisted_reference).status == 404
     assisted_context.close()
     staff.get_by_role('button', name='Keluar akun', exact=True).click()
     expect(staff).to_have_url(base + '/')

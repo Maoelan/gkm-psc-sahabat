@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+ import ReportProfile from '../../lib/components/ReportProfile.svelte';
+ import DeleteReport from '../../lib/components/DeleteReport.svelte';
+ import ReportIdentity from '../../lib/components/ReportIdentity.svelte';
 	import {
 		decisionLabel,
 		formatNik,
@@ -137,7 +140,7 @@
 				<h2>Apa yang bisa dilihat?</h2>
 				<ul>
 					<li>Rekap status dan keputusan laporan.</li>
-					<li>NIK korban tanpa sensor di halaman Data NIK khusus admin.</li>
+					<li>NIK korban pada detail laporan, hanya untuk admin berwenang.</li>
 					<li>File .xlsx dengan sheet Rekap dan Identitas.</li>
 				</ul>
 				<p class="gate-side-note">
@@ -154,7 +157,7 @@
 					</p>
 				</div>
 				<div class="recap-actions">
-					<a class="button-secondary" href="/admin/nik">Data NIK lengkap</a>
+
 					<a
 						class="button-primary"
 						href="/api/staff/recap/export"
@@ -170,7 +173,7 @@
 			<div class="recap-notice">
 				<strong>NIK hanya untuk tindak lanjut.</strong>
 				<p>
-					NIK lengkap tanpa sensor ada di <a href="/admin/nik">halaman Data NIK</a>. NIK juga dapat
+					NIK lengkap dapat dibuka pada detail laporan di halaman ini. NIK dapat
 					ditampilkan per laporan di halaman ini dan setiap pembukaan dicatat. File .xlsx dibuat
 					server dan memuat NIK di sheet Identitas. Jangan menyimpan atau membagikan file di luar
 					kebutuhan layanan.
@@ -250,8 +253,7 @@
 						<div>
 							<h2 id="table-title">Daftar laporan</h2>
 							<p>
-								Klik “Lihat detail” untuk membuka data korban. NIK lengkap ada di halaman Data
-								NIK.
+								Klik “Lihat detail” untuk membuka data korban. NIK dapat dibuka langsung pada detail laporan ini.
 							</p>
 						</div>
 						<span class="table-count">{filtered.length} laporan</span>
@@ -312,7 +314,8 @@
 						>
 					</header>
 
-					<dl class="detail-facts">
+					<ReportProfile profile={selected.profile} />
+<dl class="detail-facts">
 						<div><dt>Nama korban</dt><dd>{selected.victimName}</dd></div>
 						<div><dt>Hubungan pelapor</dt><dd>{selected.relation}</dd></div>
 						<div><dt>Waktu kejadian</dt><dd>{selected.time}</dd></div>
@@ -349,7 +352,9 @@
 						</div>
 					{/if}
 
-					<p class="detail-note">
+					<ReportIdentity id={selected.id} isAdmin={false} contactPreference={selected.contact} />
+<DeleteReport id={selected.id} csrfToken={data.csrfToken ?? ''} />
+<p class="detail-note">
 						Gunakan identitas hanya untuk kebutuhan tindak lanjut layanan. Jangan membagikannya kepada pihak yang tidak berwenang.
 					</p>
 				</section>

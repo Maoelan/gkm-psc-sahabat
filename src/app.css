@@ -224,7 +224,7 @@ summary span { color:var(--muted); font-size:.78rem; margin-left:12px; font-weig
  .wordmark { gap:6px; }
  .wordmark img { width:26px; height:30px; }
  .wordmark strong { font-size:.75rem; }
- .wordmark small { font-size:.58rem; }
+ .wordmark small { display:none; }
  .quick-exit { font-size:.75rem; padding:8px; }
  .menu-toggle { font-size:.85rem; padding:8px; }
 }

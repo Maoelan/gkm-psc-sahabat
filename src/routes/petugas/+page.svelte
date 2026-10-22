@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+ import ReportProfile from '../../lib/components/ReportProfile.svelte';
+ import DeleteReport from '../../lib/components/DeleteReport.svelte';
+ import ReportIdentity from '../../lib/components/ReportIdentity.svelte';
 	import {
 		decisionLabel as labelForDecision,
 		formatReportDate,
@@ -263,7 +266,8 @@
 						<h3>1. Baca keterangan pelapor</h3>
 						<p>{selected.story}</p>
 					</section>
-					<h3 class="summary-title">Ringkasan yang dikonfirmasi</h3>
+					<ReportProfile profile={selected.profile} />
+<h3 class="summary-title">Ringkasan yang dikonfirmasi</h3>
 					<dl class="detail-facts">
 						<div><dt>Nama korban</dt><dd>{selected.victimName}</dd></div>
 						<div><dt>Hubungan dengan korban</dt><dd>{selected.relation}</dd></div>
@@ -278,8 +282,8 @@
 					<div class="restricted-note">
 						<strong>NIK tidak ditampilkan di daftar laporan.</strong>
 						<p>
-							NIK lengkap tanpa sensor ada di <a href="/admin/nik">halaman Data NIK khusus admin</a
-							>. Pembukaan halaman NIK dicatat dalam audit.
+							Admin dapat membuka NIK di bagian identitas laporan ini atau <a href="/rekap">rekap</a>.
+							Setiap pembukaan NIK dicatat dalam audit.
 						</p>
 					</div>
 
@@ -399,7 +403,9 @@
 							>
 						</section>
 					{/if}
-				</article>
+				<ReportIdentity id={selected.id} isAdmin={data.isAdmin} contactPreference={selected.contact} />
+{#if data.isAdmin}<DeleteReport id={selected.id} csrfToken={data.csrfToken} />{/if}
+</article>
 				{/if}
 			</div>
 		{/if}

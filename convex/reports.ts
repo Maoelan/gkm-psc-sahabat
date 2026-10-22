@@ -78,16 +78,134 @@ export const get = query({
     return result;
   },
 });
+export const notifications = query({
+  args: { key: v.string(), staffSessionId: v.string() },
+  handler: async (ctx, a) => {
+    serverOnly(a.key);
+    const staff = await staffSession(ctx, a.staffSessionId, [
+      "admin",
+      "petugas",
+    ]);
+    const rows = await ctx.db
+      .query("reports")
+      .withIndex("by_submitted")
+      .order("desc")
+      .collect();
+    return rows
+      .filter((r) => staff.roles.includes("admin") || r.assignedTo === staff.id)
+      .map((r) => ({
+        referenceCode: r.referenceCode,
+        submittedAt: r.submittedAt,
+      }));
+  },
+});
+export const contact = mutation({
+  args: {
+    key: v.string(),
+    staffSessionId: v.string(),
+    referenceCode: v.string(),
+    requestId: v.optional(v.string()),
+  },
+  handler: async (ctx, a) => {
+    serverOnly(a.key);
+    const { staff, report } = await authorizedReport(
+      ctx,
+      a.staffSessionId,
+      a.referenceCode,
+    );
+    await audit(ctx, {
+      actorType: "staff",
+      actorId: staff.id,
+      action: "report.contact.viewed",
+      objectType: "report",
+      objectId: report.referenceCode,
+      requestId: a.requestId,
+    });
+    return report.safeContact ? (report.contact ?? null) : null;
+  },
+});
+export const remove = mutation({
+  args: {
+    key: v.string(),
+    staffSessionId: v.string(),
+    referenceCode: v.string(),
+    confirmation: v.string(),
+    reason: sealed,
+    requestId: v.optional(v.string()),
+  },
+  handler: async (ctx, a) => {
+    serverOnly(a.key);
+    const { staff, report } = await authorizedReport(
+      ctx,
+      a.staffSessionId,
+      a.referenceCode,
+      true,
+    );
+    if (a.confirmation !== report.referenceCode)
+      fail(
+        422,
+        "confirmation_invalid",
+        "Ketik kode laporan dengan tepat untuk menghapus.",
+      );
+    const session = await ctx.db
+      .query("sessions")
+      .withIndex("by_uuid", (q) => q.eq("id", report.sessionId))
+      .unique();
+    if (session?.openHandoffId)
+      fail(
+        409,
+        "handoff_open",
+        "Tutup bantuan petugas sebelum menghapus laporan.",
+      );
+    const related = [
+      ...(await ctx.db
+        .query("messages")
+        .withIndex("by_session", (q) => q.eq("sessionId", report.sessionId))
+        .collect()),
+      ...(await ctx.db
+        .query("drafts")
+        .withIndex("by_session", (q) => q.eq("sessionId", report.sessionId))
+        .collect()),
+      ...(await ctx.db
+        .query("handoffs")
+        .withIndex("by_session", (q) => q.eq("sessionId", report.sessionId))
+        .collect()),
+      ...(await ctx.db
+        .query("assistance")
+        .withIndex("by_session", (q) => q.eq("sessionId", report.sessionId))
+        .collect()),
+      ...(await ctx.db
+        .query("reviews")
+        .withIndex("by_report", (q) => q.eq("reportId", report.id))
+        .collect()),
+      ...(await ctx.db.query("outbox").collect()).filter(
+        (r) => r.reportId === report.id,
+      ),
+    ];
+    for (const row of related) await ctx.db.delete(row._id);
+    if (session) await ctx.db.delete(session._id);
+    await ctx.db.delete(report._id);
+    await audit(ctx, {
+      actorType: "staff",
+      actorId: staff.id,
+      action: "report.deleted",
+      objectType: "report",
+      objectId: report.referenceCode,
+      requestId: a.requestId,
+      metadata: {
+        deletedRecords: related.length + 1,
+        encryptedReason: JSON.stringify(a.reason),
+      },
+    });
+    return { deleted: true };
+  },
+});
 export const identities = mutation({
   args: {
     key: v.string(),
     staffSessionId: v.string(),
     referenceCode: v.optional(v.string()),
-    purpose: v.union(
-      v.literal("nik.view"),
-      v.literal("nik.directory.viewed"),
-      v.literal("recap.export"),
-    ),
+    purpose: v.union(v.literal("nik.view"), v.literal("recap.export")),
     requestId: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
