@@ -19,9 +19,21 @@
 		finally { busy = false; }
 	}
 </script>
-<section class="report-identity" aria-label="Identitas dan kontak pelapor"><h3>Identitas dan kontak</h3>
+<details class="report-identity" aria-label="Identitas dan kontak pelapor"><summary>Identitas dan kontak pelapor</summary>
 	{#if isAdmin}<div><span>NIK korban</span><button type="button" class="link-button" onclick={() => reveal('nik')} disabled={busy}>{nik ? 'Sembunyikan NIK' : 'Tampilkan NIK'}</button>{#if nik}<p class="identity-value">{formatNik(nik)}</p>{/if}</div>{/if}
 	<div><span>Kontak milik pelapor · {contactPreference}</span>{#if contactPreference === 'Aman dihubungi'}<button type="button" class="link-button" onclick={() => reveal('contact')} disabled={busy}>{contact ? 'Sembunyikan kontak' : 'Lihat kontak pelapor'}</button>{/if}{#if contact}<p class="identity-value">{contact}</p>{/if}</div>
 	{#if message}<p role="status">{message}</p>{/if}
-</section>
-<style>.report-identity{margin:24px 0;padding:20px 0;border-block:1px solid var(--border)}h3{font-size:1rem}span{font-size:.85rem;color:var(--muted)}.report-identity div{margin:12px 0}.link-button{margin-left:14px}.identity-value{white-space:pre-wrap;overflow-wrap:anywhere}p[role=status]{font-size:.85rem;color:var(--muted)}</style>
+</details>
+<style>.report-identity{margin:24px 0;padding:20px 0;border-block:1px solid var(--border)}
+summary {
+	font-size: 1rem;
+}
+span {
+	font-size: 0.85rem;
+	color: var(--muted);
+}.report-identity div{margin:12px 0}.link-button{margin-left:14px}.identity-value{white-space:pre-wrap;overflow-wrap:anywhere}
+p[role='status'] {
+	font-size: 0.85rem;
+	color: var(--muted);
+}
+</style>

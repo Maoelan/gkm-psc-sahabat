@@ -40,7 +40,7 @@ The hosted website and database work independently of the developer's computer. 
 
 ### Reporting
 
-Victim details are optional and encouraged when known and safe to provide. Available fields include name, date of birth, parent or guardian, address, gender, education, occupation, marital status, pregnancy, and national identification number (NIK). Reporters can select suspected violence categories and record whether another agency has already been involved. These selections support initial reporting and do not establish a legal finding.
+The phone-first flow starts with the reporter’s relationship to the victim, then goes directly to the incident narrative. Optional identity fields appear in a collapsed section during draft review. Victim details are encouraged when known and safe to provide. Available fields include name, date of birth, parent or guardian, address, gender, education, occupation, marital status, pregnancy, and national identification number (NIK). Reporters can select suspected violence categories and record whether another agency has already been involved. These selections support initial reporting and do not establish a legal finding.
 
 The six categories follow the supplied KTPA/TPPO training material: physical violence, psychological violence, sexual violence, neglect, human trafficking, and exploitation. The education page links to official references for domestic violence, trafficking, child protection, and sexual violence legislation. No unverified service contacts, village lists, or real victim records are supplied.
 
@@ -50,7 +50,7 @@ Contact permission is requested during final review. A reporter who agrees to co
 
 ### Staff and administrator actions
 
-Non-administrator staff can access assigned reports only. Administrators can access all reports. Private assistance shows one suggested question at a time, with completeness details collapsed by default. A suggestion enters the reply box for editing and must be sent manually. Automatic AI replies pause during staff takeover.
+Non-administrator staff can access assigned reports only. Administrators can access all reports. On phones, staff navigation stays at the bottom and only one inbox pane is shown at a time. The reply box precedes an on-demand assistance disclosure. Private assistance shows one suggested question at a time, with completeness details collapsed by default. A suggestion enters the reply box for editing and must be sent manually. Automatic AI replies pause during staff takeover.
 
 Collected facts must be grounded in actual reporter messages. Unknown answers remain distinguishable from missing information. Reporter review remains necessary before a draft becomes a submitted report.
 
@@ -138,7 +138,7 @@ Builds use the Node adapter unless `VERCEL=1` or `DEPLOY_TARGET=vercel` is set. 
 - `development`: shared integration branch.
 - `feature/vercel-convex`: migration and evaluation feature work.
 
-GitHub is connected to the Vercel project. [vercel.json](vercel.json) enables automatic Git deployments for `main` and disables them for other branches. A push to a development branch runs GitHub checks but does not publish the stable website. After an approved pull request is merged into `main`, Vercel builds that commit and updates the evaluation URL. A failed build does not replace the last successful deployment.
+GitHub is connected to the Vercel project, and Vercel deployment reporting to GitHub is enabled. The repository’s Deployments section records the verified production release and its website URL. [vercel.json](vercel.json) enables automatic Git deployments for `main` and disables them for other branches. A push to a development branch runs GitHub checks but does not publish the stable website. After an approved pull request is merged into `main`, Vercel builds that commit and updates the evaluation URL. A failed build does not replace the last successful deployment.
 
 The `main` protection policy requires the `secret-scan` and `integration` checks, one approving review from another person, resolved review conversations, and an up-to-date branch. It applies to administrators and blocks force pushes and branch deletion. Repository visibility is public so this protection can be enforced on GitHub Free. Do not commit credentials or evaluation records to the repository.
 
@@ -148,7 +148,7 @@ Convex releases are separate from Vercel Git deployments. When a change modifies
 npm run convex:deploy
 ```
 
-Verify the deployment target before running that command. The evaluation backend must use its matching server credential and encryption keys. Production-only credentials must not be copied into preview environments. Preview deployments remain disabled until an independent backend, credentials, and keys are configured.
+Verify the deployment target before running that command. The evaluation backend must use its matching server credential and encryption keys. Production-only credentials must not be copied into preview environments. Preview deployments remain disabled until an independent backend, credentials, and keys are configured. The project’s ignored-build command also limits builds to `main`: `test "$VERCEL_GIT_COMMIT_REF" != "main"` (exit 0 skips a non-main build). The `**` branch pattern in `vercel.json` covers feature branch names containing slashes.
 
 For a new environment:
 
@@ -175,7 +175,7 @@ npm run security:scan -- --history --staged --client
 npm audit --audit-level=low
 ```
 
-The interface revision was verified on **22 October 2026** with 76 unit tests, 27 native Convex integration tests, type checks, Node and Vercel builds, secret scans, and a dependency audit reporting zero known vulnerabilities. Development and production browser flows covered screen widths from 320 to 1440 pixels. Hosted verification covered staff takeover, manual replies, confirmed submission, optional fields, identity access, export, notifications, and deletion of its own synthetic test report. A separate live NVIDIA check verified that the AI explains optional victim information correctly.
+The interface revision was verified on **22 October 2026** with 76 unit tests, 27 native Convex integration tests, type checks, Node and Vercel builds, secret scans, and a dependency audit reporting zero known vulnerabilities. Development and production browser flows cover widths from 320 to 1440 pixels, touch emulation, landscape layouts, and reduced viewport height while the composer remains focused. These are browser-emulation checks; physical Android and iOS device testing remains necessary before operational rollout. Hosted verification covered staff takeover, manual replies, confirmed submission, optional fields, identity access, export, notifications, and deletion of its own synthetic test report. A separate live NVIDIA check verified that the AI explains optional victim information correctly.
 
 These checks are a dated release snapshot, not a guarantee of permanent security. Rerun the appropriate checks after changes.
 

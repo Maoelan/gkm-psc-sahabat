@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { keepComposerVisible } from '../../../lib/keep-composer-visible';
 	import { onMount, tick, untrack } from 'svelte';
 	import StaffAssistancePanel from '../../../lib/components/StaffAssistance.svelte';
 	import type { StaffAssistance } from '../../../lib/assistance';
@@ -33,6 +34,7 @@
 	let assistanceLoading = $state(false);
 	let assistanceError = $state('');
 	let replyInput = $state<HTMLTextAreaElement>();
+	onMount(() => keepComposerVisible(() => replyInput));
 	let assistanceController: AbortController | undefined;
 	let assistanceKey = '';
 	let assistanceThread = '';
@@ -398,19 +400,19 @@
 	<title>Percakapan langsung | LAPOR AMAN</title>
 </svelte:head>
 
-<div class="live-page">
+<div class="live-page" class:thread-open={detailsOpen}>
 	<section class="live-shell">
 		<header class="live-title">
 			<div>
 
 				<h1>Percakapan langsung</h1>
-				<p>Ambil percakapan untuk membantu pelapor. Setelah selesai membalas, tutup percakapan agar pelapor dapat memeriksa dan mengirim laporannya.
+				<p>Pilih percakapan untuk membaca dan membalas pelapor.
 				</p>
 			</div>
 
 		</header>
 
-		<div class="live-notice"><strong>Saat Anda bergabung, balasan otomatis AI dijeda.</strong><span>Panduan petugas membantu menemukan keterangan dan menyusun pertanyaan. Anda tetap memeriksa dan mengirim balasan sendiri.</span></div>
+		<details class="staff-help"><summary>Cara membantu pelapor</summary><p>Baca percakapan, lalu balas pelapor. Balasan otomatis AI dijeda saat petugas bergabung. Gunakan Bantu susun pertanyaan jika perlu; pertanyaan tetap Anda periksa dan kirim sendiri.</p></details>
 
 		{#if data.serviceMode === 'ai'}
 			<div class="live-hours" role="status">
@@ -568,7 +570,6 @@
 								<button class="mobile-back" type="button" onclick={backToQueue}
 									>Kembali ke antrean</button
 								>
-								<p class="thread-status">{handoffStatusLabel(handoff.status)}</p>
 								<h2 tabindex="-1" bind:this={threadHeading}>Percakapan pelapor</h2>
 								<p>
 									Diminta {relativeTime(handoff.requestedAt)}
@@ -583,10 +584,10 @@
 						</div>
 
 						<div class="live-status-note" class:closed={!isHandoffOpen(handoff.status)}>
-							{handoffStatusCopy(handoff.status)}
+							{handoff.status === 'active' ? 'Balasan otomatis AI dijeda selama petugas bergabung.' : handoffStatusCopy(handoff.status)}
 						</div>
 
-						<div class="live-conversation" class:with-assistance={canReply}>
+						<div class="live-conversation">
 						<div class="live-log" bind:this={log} role="log" aria-live="polite" aria-label="Pesan percakapan">
 							{#if messages.length === 0}
 								<p class="live-log-empty">Belum ada pesan dalam percakapan ini.</p>
@@ -606,7 +607,7 @@
 							{/if}
 						</div>
 
-						{#if canReply}<StaffAssistancePanel {assistance} loading={assistanceLoading} error={assistanceError} disabled={busy} onrefresh={() => refreshAssistance(selectedId, assistanceRevision, true)} onuse={useSuggestedQuestion} />{/if}
+
 						</div>
 
 						{#if canReply}
@@ -631,6 +632,7 @@
 									</button>
 								</div>
 							</form>
+                            {#key selectedId}<StaffAssistancePanel {assistance} loading={assistanceLoading} error={assistanceError} disabled={busy} onrefresh={() => refreshAssistance(selectedId, assistanceRevision, true)} onuse={useSuggestedQuestion} />{/key}
 						{:else if isHandoffOpen(handoff.status)}
 							<p class="live-readonly">
 								Percakapan aktif. Hanya petugas yang mengambil atau admin yang dapat membalas.
@@ -668,19 +670,6 @@
 		letter-spacing: -0.035em;
 	}
 	.live-title p:last-child { max-width: 70ch; margin: 10px 0 0; color: var(--muted); }
-
-	.live-notice {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 4px 8px;
-		margin-bottom: 18px;
-		padding: 12px 14px;
-		border: 0;
-		background: var(--surface);
-		color: var(--muted);
-		font-size: 0.84rem;
-	}
-	.live-notice strong { flex: 0 1 auto; min-width:0; }
 	.live-hours {
 		display: flex;
 		flex-wrap: wrap;
@@ -896,7 +885,7 @@
 	.live-state p { color: var(--muted); }
 	.live-state.compact { padding: 32px 24px; }
 
-	@media (max-width: 900px) {
+@media (max-width: 900px) {
 		.live-title { flex-direction: column; }
 
 		.live-grid { grid-template-columns: 1fr; min-height: 0; }
@@ -904,8 +893,8 @@
 		.live-grid.thread-open .live-queue { display: none; }
 		.live-grid:not(.thread-open) .live-thread { display: none; }
 		.mobile-back { display: inline-flex; align-items: center; }
-	}
-	@media (max-width: 540px) {
+}
+@media (max-width: 540px) {
 		.live-page { padding: 18px 0 40px; }
 		.live-shell { width: calc(100% - 32px); }
 		.live-title h1 { font-size: 1.5rem; }
@@ -918,12 +907,100 @@
 		.live-reply { padding: 12px 14px 14px; }
 		.live-reply-actions { flex-direction: column; align-items: stretch; }
 		.live-reply-actions .button-primary { width: 100%; }
-	}
+}
 
-	.live-grid { grid-template-columns:minmax(240px,.5fr) minmax(0,1.5fr); }
+.live-grid {
+	grid-template-columns: minmax(240px, 0.5fr) minmax(0, 1.5fr);
+}
 	.live-conversation { display:grid; grid-template-columns:minmax(0,1fr); min-width:0; }
-	.live-conversation.with-assistance { grid-template-columns:minmax(0,1fr) 290px; }
 	.live-conversation .live-log { height:clamp(280px,45dvh,480px); min-height:280px; }
-	@media(max-width:1300px) { .live-conversation.with-assistance { grid-template-columns:minmax(0,1fr); } }
-	@media(max-width:900px) { .live-grid { grid-template-columns:minmax(0,1fr); } }
+@media (max-width: 900px) { .live-grid { grid-template-columns:minmax(0,1fr); }
+}
+.staff-help {
+	margin-bottom: 20px;
+}
+.staff-help p {
+	font-size: 0.9375rem;
+	color: var(--muted);
+	max-width: 70ch;
+}
+@media (max-width: 900px) {
+	.live-page {
+		padding: 20px 0 32px;
+	}
+	.live-shell {
+		width: calc(100% - 32px);
+	}
+	.thread-open .staff-help,
+	.thread-open .live-hours {
+		display: none;
+	}
+	.thread-open .live-title {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+	.live-reply {
+		padding: 16px;
+	}
+	.live-log {
+		height: clamp(200px, calc(100dvh - 360px), 500px) !important;
+		min-height: 200px !important;
+	}
+	.live-thread-head {
+		padding: 16px;
+	}
+	.live-reply-actions {
+		flex-wrap: wrap;
+	}
+	.live-reply-actions .button-primary {
+		min-height: 48px;
+	}
+}
+@media (max-width: 900px) {
+	.live-thread-head {
+		flex-direction: row;
+		align-items: start;
+		gap: 12px;
+		padding: 12px;
+	}
+	.live-thread-head > div {
+		min-width: 0;
+		flex: 1;
+	}
+	.live-thread-head h2 {
+		font-size: 1.0625rem;
+	}
+	.live-thread-head .danger-button {
+		width: 112px;
+		max-width: 112px;
+		flex-shrink: 0;
+		white-space: normal;
+		font-size: 0.8125rem;
+		padding: 8px;
+	}
+	.live-thread-head p:last-child {
+		font-size: 0.75rem;
+	}
+	.live-log {
+		height: clamp(180px, calc(100dvh - 620px), 420px) !important;
+		min-height: 180px !important;
+	}
+	.live-status-note {
+		padding: 10px 12px;
+		font-size: 0.8125rem;
+	}
+	.live-reply textarea {
+		scroll-margin-bottom: 100px;
+	}
+}
+@media (max-width: 900px) {
+	.live-thread {
+		overflow: visible;
+	}
+}
 </style>

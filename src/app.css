@@ -51,9 +51,6 @@ input,textarea { caret-color:var(--teal); }
 .quick-exit { min-height:44px; border:1px solid #d2b4c1; border-radius:8px; background:#fff; color:#8e104b; padding:8px 14px; font-size:.85rem; font-weight:700; white-space:nowrap; }
 .quick-exit:hover { background:#fff2f7; }
 .menu-toggle { display:none; min-height:44px; padding:8px 12px; border:1px solid var(--border); border-radius:8px; background:#fff; color:var(--ink); }
-.privacy-banner { background:#eef5f3; color:#365a58; font-size:.82rem; padding:10px 24px; text-align:center; }
-.privacy-banner p { margin:0; }
-.privacy-banner a { font-weight:650; }
 main { min-height:65vh; }
 .navigation-dialog { position:fixed; inset:0 0 0 auto; width:min(370px,100%); height:100dvh; max-height:100dvh; max-width:100%; margin:0 0 0 auto; padding:24px; border:0; background:#fff; color:var(--ink); }
 .navigation-dialog::backdrop { background:rgb(10 32 44 / 45%); }
@@ -98,37 +95,6 @@ main { min-height:65vh; }
 .staff-frame .summary-card:last-child { border-right:0; }
 .staff-frame .summary-card strong { font-size:1.8rem; font-weight:600; }
 .staff-frame .summary-card p { font-size:.85rem; }
-.welcome-page { max-width:1120px; width:calc(100% - 64px); margin:auto; padding:52px 0 60px; }
-.welcome-intro { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(240px,.65fr); align-items:center; gap:64px; }
-.welcome-copy h1 { margin:0; font-size:2.75rem; font-weight:650; letter-spacing:-.035em; line-height:1.15; color:var(--navy); }
-.welcome-copy > p { max-width:54ch; color:var(--muted); }
-.welcome-copy .welcome-lead { margin:22px 0 12px; color:var(--ink); font-size:1.15rem; }
-.welcome-actions { display:flex; flex-wrap:wrap; align-items:center; gap:24px; margin-top:28px; }
-.welcome-actions .button-primary { min-height:54px; }
-.welcome-copy .welcome-reassurance { font-size:.82rem; margin-top:16px; }
-.welcome-companion { align-self:stretch; background:#e4efeb; border-radius:16px; padding:24px 16px 18px; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-.welcome-companion img { width:190px; height:264px; object-fit:contain; }
-.welcome-companion p { margin:12px 0 0; text-align:center; font-size:.85rem; color:#355a51; }
-.report-journey { margin-top:44px; padding:28px 32px; background:#fff; border:1px solid var(--border); border-radius:16px; }
-.report-journey h2 { margin:0; font-size:1.15rem; }
-.report-journey ol { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); list-style:none; padding:0; gap:32px; margin:24px 0 0; }
-.report-journey li { display:flex; gap:14px; }
-.report-journey li > span { display:flex; align-items:center; justify-content:center; flex:0 0 30px; height:30px; border:1px solid #b8ceca; border-radius:50%; color:var(--teal-dark); font-size:.85rem; font-weight:650; }
-.report-journey h3 { margin:4px 0 8px; font-size:.95rem; }
-.report-journey p { margin:0; font-size:.85rem; color:var(--muted); }
-.welcome-information { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(240px,1fr); gap:48px; margin-top:40px; align-items:start; }
-.welcome-information h2 { margin:0; font-size:1.15rem; }
-.welcome-information p { color:var(--muted); font-size:.9rem; }
-details { border-bottom:1px solid var(--border); }
-summary { cursor:pointer; padding:16px 0; font-weight:650; font-size:.9rem; min-height:48px; }
-summary span { color:var(--muted); font-size:.78rem; margin-left:12px; font-weight:400; }
-.service-schedule { margin:0 0 20px; font-size:.88rem; }
-.service-schedule div { display:flex; justify-content:space-between; gap:16px; padding:8px 0; }
-.service-schedule dd { margin:0; font-variant-numeric:tabular-nums; }
-.urgent-help { padding:24px; background:#fff7e5; border-radius:12px; color:#58441c; }
-.urgent-help p { color:#685431; }
-.urgent-help a { font-size:.88rem; font-weight:650; }
-.urgent-help .small-copy { font-size:.8rem; margin:20px 0 0; padding-top:16px; border-top:1px solid #e5d7b6; }
 .page-shell { width:min(980px,calc(100% - 64px)); margin:auto; padding:40px 0 64px; }
 .page-heading { display:flex; align-items:start; justify-content:space-between; gap:32px; margin-bottom:32px; }
 .page-heading h1 { font-size:2rem; margin:0; letter-spacing:-.025em; }
@@ -167,7 +133,6 @@ summary span { color:var(--muted); font-size:.78rem; margin-left:12px; font-weig
  .topbar-inner { width:calc(100% - 32px); gap:20px; }
  .desktop-nav { gap:20px; }
  .staff-entry { display:none; }
- .welcome-intro { gap:32px; }
 }
 @media(max-width:980px) {
  .staff-frame { padding:0; }
@@ -189,21 +154,7 @@ summary span { color:var(--muted); font-size:.78rem; margin-left:12px; font-weig
  .wordmark strong { font-size:.85rem; }
  .wordmark small { font-size:.62rem; }
  .quick-exit { padding:8px 10px; font-size:.8rem; }
- .privacy-banner { text-align:left; padding:10px 16px; font-size:.78rem; }
- .welcome-page,.page-shell { width:calc(100% - 32px); padding-top:32px; }
- .welcome-intro { grid-template-columns:1fr; gap:24px; }
- .welcome-copy h1 { font-size:2.15rem; }
- .welcome-copy .welcome-lead { font-size:1.05rem; margin-top:18px; }
- .welcome-copy > p { font-size:.95rem; }
- .welcome-actions { gap:10px; margin-top:24px; flex-direction:column; align-items:stretch; }
- .welcome-actions .text-link { justify-content:center; }
- .welcome-companion { flex-direction:row; padding:16px 20px; gap:20px; justify-content:start; }
- .welcome-companion img { width:74px; height:108px; }
- .welcome-companion p { text-align:left; margin:0; }
- .report-journey { margin-top:24px; padding:24px 20px; }
- .report-journey ol { grid-template-columns:1fr; gap:22px; margin-top:20px; }
- .report-journey h3 { margin-top:3px; }
- .welcome-information { grid-template-columns:1fr; gap:28px; margin-top:32px; }
+ .page-shell { width:calc(100% - 32px); padding-top:32px; }
  .footer-inner { width:calc(100% - 32px); align-items:start; flex-direction:column; gap:12px; }
  .footer-links { flex-wrap:wrap; gap:16px; }
  .page-heading { flex-direction:column; gap:20px; }
@@ -228,3 +179,6 @@ summary span { color:var(--muted); font-size:.78rem; margin-left:12px; font-weig
  .quick-exit { font-size:.75rem; padding:8px; }
  .menu-toggle { font-size:.85rem; padding:8px; }
 }
+
+/* Phone controls retain readable text and room for touch and browser safe areas. */
+@media(max-width:900px){input,select,textarea{font-size:16px!important}button,.button-primary,.button-secondary{min-height:44px}.staff-frame .staff-page,.staff-frame .recap-page{padding:20px 16px 40px}.staff-frame .staff-workspace,.staff-frame .recap-shell{padding:0;border:0;background:transparent}.staff-frame .report-detail{padding:20px 16px}.staff-frame .inbox-grid{border:0}.staff-frame .staff-title h1{font-size:1.5rem}.staff-frame .staff-controls{margin:20px 0 16px}.staff-frame .report-queue{border:0}.staff-frame .detail-facts{border:0}.staff-frame .detail-facts div{padding:12px 0;border:0}.staff-frame .detail-facts div:nth-child(odd){border:0}}

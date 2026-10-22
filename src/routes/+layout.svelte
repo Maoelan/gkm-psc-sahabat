@@ -7,6 +7,7 @@
 
 	let { children, data }: LayoutProps = $props();
 	let menuDialog: HTMLDialogElement;
+	const reporting = $derived(page.url.pathname === '/chat');
 	const staffArea = $derived(Boolean(data.staff) && (/^\/(petugas|admin)(\/|$)/.test(page.url.pathname) || page.url.pathname === '/rekap'));
 	const publicLinks = [
 		{ href: '/', label: 'Beranda' },
@@ -47,13 +48,13 @@
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
-<div class="app-frame" class:staff-frame={staffArea}>
+<div class="app-frame" class:staff-frame={staffArea} class:reporting-frame={reporting}>
 	<a class="skip-link" href="#main-content">Lewati ke isi utama</a>
 	<header class="topbar">
 		<div class="topbar-inner">
 			<a class="wordmark" href={staffArea ? '/petugas' : '/'} aria-label="PSC SAHABAT, beranda">
 				<img src="/brand/psc-sahabat.svg" alt="" width="44" height="48" />
-				<span><strong>PSC SAHABAT</strong><small>Pelaporan perempuan dan anak</small></span>
+				<span><strong>PSC SAHABAT</strong><small>UPT Puskesmas Suranadi</small></span>
 			</a>
 			{#if staffArea}<span class="workspace-label">Ruang kerja petugas</span>
 			{:else}<nav class="desktop-nav" aria-label="Menu utama">{#each publicLinks as item}<a href={item.href} aria-current={page.url.pathname === item.href ? 'page' : undefined}>{item.label}</a>{/each}</nav>{/if}
@@ -74,10 +75,51 @@
 			<nav>{#each staffLinks as item}<a href={item.href} aria-current={page.url.pathname === item.href ? 'page' : undefined}><strong>{item.label}</strong><small>{item.help}</small></a>{/each}</nav>
 			<div class="workspace-account"><strong>{data.staff?.displayName}</strong><span>Petugas layanan</span><a href="/">Buka portal publik</a><form method="POST" action="/masuk?/logout"><input type="hidden" name="csrfToken" value={data.staff?.csrfToken} /><button type="submit">Keluar akun</button></form></div>
 		</aside>
-	{:else}<div class="privacy-banner"><p>Gunakan perangkat yang aman. Cerita dapat diproses asisten AI NVIDIA. <a href="/panduan#privasi">Pelajari privasi Anda</a></p></div>{/if}
+	{/if}
 	{#if !staffArea && page.url.pathname !== '/masuk'}<FirstVisit />{/if}
+    {#if staffArea}<nav class="staff-mobile-nav" aria-label="Menu petugas"><a href="/petugas" aria-current={page.url.pathname === '/petugas' ? 'page' : undefined}>Laporan</a><a href="/petugas/percakapan" aria-current={page.url.pathname === '/petugas/percakapan' ? 'page' : undefined}>Percakapan</a>{#if data.staff?.roles.includes('admin')}<a href="/rekap" aria-current={page.url.pathname === '/rekap' ? 'page' : undefined}>Rekap</a>{/if}</nav>{/if}
 	<main id="main-content" tabindex="-1">{@render children()}</main>
-	{#if !staffArea}<footer class="site-footer"><div class="footer-inner"><div class="footer-institution"><img src="/brand/puskesmas-logo.png" width="44" height="48" alt="Logo Puskesmas" /><div><strong>UPT Puskesmas Suranadi</strong><p>PSC SAHABAT untuk wilayah kerja Puskesmas Suranadi.</p><p>© {new Date().getFullYear()} UPT Puskesmas Suranadi.</p></div></div><div class="footer-links"><a href="/edukasi">Edukasi</a><a href="/panduan#privasi">Pemberitahuan privasi</a><a href="https://puskesmassuranadi-dikes.lombokbaratkab.go.id/" target="_blank" rel="noopener noreferrer">Profil Puskesmas Suranadi</a><a href="/masuk">Masuk petugas</a></div></div></footer>{/if}
+	{#if !staffArea && !reporting}<footer class="site-footer"><div class="footer-inner"><div class="footer-institution"><img src="/brand/puskesmas-logo.png" width="44" height="48" alt="Logo Puskesmas" /><div><strong>UPT Puskesmas Suranadi</strong><p>PSC SAHABAT untuk wilayah kerja Puskesmas Suranadi.</p><p>© {new Date().getFullYear()} UPT Puskesmas Suranadi.</p></div></div><div class="footer-links"><a href="/edukasi">Edukasi</a><a href="/panduan#privasi">Pemberitahuan privasi</a><a href="https://puskesmassuranadi-dikes.lombokbaratkab.go.id/" target="_blank" rel="noopener noreferrer">Profil Puskesmas Suranadi</a><a href="/masuk">Masuk petugas</a></div></div></footer>{/if}
 </div>
 
-<style>.footer-institution{display:flex;align-items:flex-start;gap:16px}.footer-institution img{object-fit:contain;flex-shrink:0}.wordmark img{object-fit:contain}</style>
+<style>
+.staff-mobile-nav {
+	display: none;
+}
+@media (max-width: 900px) {
+	.staff-mobile-nav {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		z-index: 30;
+		display: flex;
+		background: var(--paper);
+		border-top: 1px solid var(--border);
+		padding: 4px 8px max(4px, env(safe-area-inset-bottom));
+	}
+	.staff-mobile-nav a {
+		display: flex;
+		flex: 1;
+		align-items: center;
+		justify-content: center;
+		min-height: 52px;
+		padding: 8px;
+		font-size: 0.875rem;
+		text-decoration: none;
+		color: var(--muted);
+	}
+	.staff-mobile-nav a[aria-current='page'] {
+		font-weight: 700;
+		background: var(--surface);
+		color: var(--navy);
+	}
+	.staff-frame {
+		padding-bottom: calc(72px + env(safe-area-inset-bottom));
+	}
+}
+.reporting-frame :global(.desktop-nav),
+.reporting-frame :global(.staff-entry) {
+	display: none;
+}.footer-institution{display:flex;align-items:flex-start;gap:16px}.footer-institution img{object-fit:contain;flex-shrink:0}.wordmark img{object-fit:contain}
+</style>
