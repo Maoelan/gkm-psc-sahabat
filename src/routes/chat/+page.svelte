@@ -100,6 +100,8 @@
 	let privacyCheckbox = $state<HTMLInputElement>();
 	let firstRelation = $state<HTMLInputElement>();
 	let nameReviewInput = $state<HTMLInputElement>();
+    let initialNameInput = $state<HTMLInputElement>();
+    let editingName = $state(false);
 	let nikReviewInput = $state<HTMLInputElement>();
 	let contactNo = $state<HTMLInputElement>();
 	let reviewButton = $state<HTMLButtonElement>();
@@ -353,6 +355,7 @@
 				accepted?: boolean;
 				userMessageId?: string;
 				flowComplete?: boolean;
+                excludeFromStory?: boolean;
 				message?: string | null;
 				question?: string | null;
 				source?: string;
@@ -372,7 +375,7 @@
 				}
 				throw new Error(payload.error || 'Pertanyaan berikutnya belum dapat dimuat.');
 			}
-			story = nextStory;
+			if (!payload.excludeFromStory) story = nextStory;
 			input = '';
 			await addMessage('user', userMessage, 'user', payload.userMessageId);
 			if (payload.fields) {
@@ -656,6 +659,12 @@
 			firstRelation?.focus();
 			return;
 		}
+        victimName = victimName.trim();
+        if (victimName && victimName.length < 2) {
+            identityError = 'Tulis nama atau nama panggilan sedikitnya 2 karakter, atau kosongkan.';
+            initialNameInput?.focus();
+            return;
+        }
 		if (!(await ensureSession())) return;
 		nextMessageId = 1;
 		messages = [];
@@ -772,7 +781,7 @@
 		const name = victimName.trim();
 		if (name && name.length < 2) {
 			submitError = 'Tulis nama korban atau nama panggilan sedikitnya 2 karakter.';
-			if (victimReviewDetails) victimReviewDetails.open = true;
+			editingName = true;
 			await tick();
 			nameReviewInput?.focus();
 			return;
@@ -892,6 +901,7 @@
 		input = '';
 		addingStory = false;
 		identityError = '';
+        editingName = false;
 		chatError = '';
 		submitError = '';
 		copyStatus = '';
@@ -904,7 +914,7 @@
 </script>
 
 <svelte:head>
-	<title>Chat Pengaduan | Lapor Aman - PSC</title>
+	<title>Chat Pengaduan | Lapor Aman - PSC Sahabat</title>
 </svelte:head>
 
 <div class="chat-page" class:chat-stage={stage === 'chat'} class:review-stage={stage === 'review'}>
@@ -939,7 +949,7 @@
 			<section class="start-card" aria-labelledby="start-title">
 				<h2 id="start-title">Sebelum mulai</h2>
 				<p class="start-intro">Tulis cerita, periksa, lalu kirim. Tidak perlu membuat akun.</p>
-				<p class="start-privacy">Pesan tersimpan saat dikirim. Cerita dapat diproses asisten AI NVIDIA; AI tidak menggantikan petugas. NIK dapat diisi pada kolom identitas; nomor kontak diisi saat memeriksa draf. <a href="/panduan#privasi" target="_blank" rel="noopener">Baca rincian privasi</a>.</p>
+				<p class="start-privacy">Pesan tersimpan saat dikirim. Cerita dapat diproses asisten AI NVIDIA; AI tidak menggantikan petugas. NIK dapat diisi setelah bercerita; nomor kontak diisi saat memeriksa draf. <a href="/panduan#privasi" target="_blank" rel="noopener">Baca rincian privasi</a>.</p>
 
 				{#if safetyChoice !== 'unsafe'}
 					<div class="safety-question">
@@ -1012,7 +1022,7 @@
 			<section class="identity-card" aria-labelledby="identity-title">
 				<h2 id="identity-title" tabindex="-1" bind:this={identityHeading}>Anda melapor untuk siapa?</h2>
 				<p class="identity-lead">
-					Pilih hubungan Anda dengan korban. Nama dan NIK boleh diisi sekarang; data lainnya bisa dilengkapi setelah bercerita.
+					Pilih hubungan Anda dengan korban. Nama korban boleh diisi sekarang. Data lainnya bisa dilengkapi setelah bercerita.
 				</p>
 
 				<fieldset class="relation-field">
@@ -1051,8 +1061,7 @@
 				</fieldset>
 
                 <div class="review-grid">
-                    <label class="field">Nama korban atau nama panggilan (opsional)<input maxlength="80" autocomplete="off" bind:value={victimName} /></label>
-                    <label class="field">NIK korban (opsional)<input inputmode="numeric" maxlength="24" autocomplete="off" bind:value={victimNik} oninput={() => victimNik = normalizeNik(victimNik)} placeholder="16 digit, boleh dikosongkan" /></label>
+                    <label class="field">Nama korban atau nama panggilan (opsional)<input bind:this={initialNameInput} maxlength="80" autocomplete="off" bind:value={victimName} /></label>
                 </div>
                 <p class="field-help">Boleh diisi sekarang atau dilengkapi nanti. Data ini tidak dikirim ke AI.</p>
 				{#if identityError}<p class="form-error" role="alert">{identityError}</p>{/if}
@@ -1224,13 +1233,13 @@
 						<div class="composer-meta">
 							<p id="composer-help">
 								{#if handoffOpen}
-									Pesan ini dikirim ke petugas, bukan ke AI. Jangan tulis NIK atau kontak lengkap.
+									Pesan ini dikirim langsung ke petugas, bukan ke AI.
 								{:else if addingStory}
 									Tambahan cerita akan masuk ke keterangan Anda.
 								{:else if chatStep === 'open'}
 									Tambahan cerita akan ikut masuk ke draf.
 								{:else}
-									NIK bisa dilengkapi pada kolom identitas saat memeriksa draf.
+									Boleh jawab singkat atau lanjutkan cerita.
 								{/if}
 							</p>
 							{#if isFieldStep && !handoffOpen}
@@ -1265,6 +1274,11 @@
                     </div>
 				</header>
 
+                <div class="review-name">
+                    <p>Nama korban: <strong>{victimName || 'Belum diisi'}</strong></p>
+                    <button class="link-button" type="button" onclick={async () => { editingName = !editingName; await tick(); if (editingName) nameReviewInput?.focus(); }}>{editingName ? 'Selesai ubah nama' : 'Ubah nama'}</button>
+                    {#if editingName}<label class="field">Ubah nama korban (opsional)<input bind:this={nameReviewInput} maxlength="80" autocomplete="off" bind:value={victimName} /></label>{/if}
+                </div>
 				<section class="review-section" aria-labelledby="story-review-title">
 					<h3 id="story-review-title">Cerita Anda</h3>
 					<label for="review-story">Keterangan pelapor</label>
@@ -1306,15 +1320,7 @@
 				<details class="review-section victim-review" bind:this={victimReviewDetails}>
                     <summary>Lengkapi data korban <span>Opsional</span></summary>
                     <p>Isi yang diketahui untuk membantu pemeriksaan. Laporan tetap dapat dikirim tanpa data ini.</p>
-                    <div class="review-grid"><label class="field field-wide"
-							>Nama korban
-							<input
-								bind:this={nameReviewInput}
-								maxlength="80"
-								autocomplete="off"
-								bind:value={victimName}
-							/>
-						</label>
+                    <div class="review-grid">
 						<div class="field field-wide">
 
 								<label for="review-nik">NIK korban (opsional)</label>
@@ -1327,12 +1333,9 @@
 									bind:value={victimNik}
 									oninput={() => (victimNik = normalizeNik(victimNik))}
 									placeholder="16 digit, boleh dikosongkan"
-									aria-describedby="review-nik-help"
 								/>
 
-							<p id="review-nik-help" class="field-help">
-								Admin dapat melihat NIK pada detail laporan untuk tindak lanjut. NIK tidak wajib diisi.
-							</p>
+
 						</div>
 						</div>
                     <VictimDetails bind:profile={victimProfile} {relation} prefix="review" embedded />
@@ -1393,10 +1396,7 @@
 					<details class="privacy-details"><summary>Baca data yang diproses dan batas akses</summary>					<ul>
 						<li>Tujuan: menyiapkan dan memeriksa pengaduan.</li>
 						<li>Data: cerita, ringkasan, hubungan dengan korban, data korban opsional (termasuk tanggal lahir, alamat, orang tua, pendidikan, pekerjaan, status perkawinan, dan kehamilan), dugaan jenis kekerasan, koordinasi, serta izin dan kontak pelapor.</li>
-						<li>
-							Akses NIK: hanya akun berwenang dengan peran admin yang dapat membuka NIK. Daftar
-							meja petugas tidak menampilkan NIK. Setiap pembukaan dicatat dalam audit.
-						</li>
+
 						<li>Akses: hanya akun staff yang masuk dan memiliki peran sesuai.</li>
 						<li>
 							AI: pada mode AI, pola NIK, nomor, email, dan nama yang jelas diredaksi sebelum cerita
@@ -1445,6 +1445,11 @@
 </div>
 
 <style>
+    .review-name { margin: 16px 0; }
+    .review-name p { display: inline; }
+    .review-name button { margin-left: 12px; }
+    .review-name .field { margin-top: 12px; }
+
 	.chat-page {
 		width: min(760px, calc(100% - 32px));
 		margin: 0 auto;

@@ -182,3 +182,10 @@ describe('NIK dengan pemisah', () => {
 		expect(redactSensitive(`NIK ${nik}.`)).not.toContain(nik);
 	});
 });
+
+
+it('allows two short supportive paragraphs while rejecting ungrounded safety assurances', () => {
+    expect(isSafeReply('Saya mendengar Anda masih takut setelah pergi ke rumah saudara.\n\nAnda boleh bercerita pelan-pelan, sejauh yang nyaman.')).toBe(true);
+    expect(isSafeReply('Di sini Anda aman untuk bercerita.')).toBe(false);
+    expect(isSafeReply('Di rumah saudara Anda sudah aman.')).toBe(false);
+});

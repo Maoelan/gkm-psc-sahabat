@@ -74,7 +74,7 @@
 </script>
 
 <svelte:head>
-	<title>Rekap laporan | Lapor Aman - PSC</title>
+	<title>Rekap laporan | Lapor Aman - PSC Sahabat</title>
 </svelte:head>
 
 <div class="recap-page" class:gate-view={!data.authenticated}>

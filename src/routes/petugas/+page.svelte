@@ -188,7 +188,7 @@
 </script>
 
 <svelte:head>
-	<title>Meja petugas | Lapor Aman - PSC</title>
+	<title>Meja petugas | Lapor Aman - PSC Sahabat</title>
 </svelte:head>
 
 <div class="staff-page" class:detail-open={detailsOpen}>

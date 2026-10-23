@@ -21,7 +21,7 @@ export function buildRecapWorkbook(
 
   const sheets: XlsxSheet[] = [{
     name: "Rekap",
-    title: "REKAP LENGKAP LAPOR AMAN - PSC",
+    title: "REKAP LENGKAP LAPOR AMAN - PSC SAHABAT",
     note: `Dibuat server pada ${stamp} WITA. Berisi identitas, kontak, dan kronologi; hanya untuk admin berwenang. Kolom opsional yang tidak diisi dibiarkan kosong.`,
     headers: [
       "Kode laporan", "Tanggal masuk", "Nama korban", "NIK korban", "Hubungan pelapor dengan korban",

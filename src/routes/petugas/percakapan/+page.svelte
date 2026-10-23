@@ -407,7 +407,7 @@
 </script>
 
 <svelte:head>
-	<title>Percakapan langsung | Lapor Aman - PSC</title>
+	<title>Percakapan langsung | Lapor Aman - PSC Sahabat</title>
 </svelte:head>
 
 <div class="live-page" class:thread-open={detailsOpen}>

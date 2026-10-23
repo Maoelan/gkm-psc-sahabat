@@ -1,5 +1,5 @@
 <svelte:head>
-	<title>Panduan sebelum melapor | Lapor Aman - PSC</title>
+	<title>Panduan sebelum melapor | Lapor Aman - PSC Sahabat</title>
 </svelte:head>
 
 <div class="page-shell guide-page">
