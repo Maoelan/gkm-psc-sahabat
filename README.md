@@ -137,8 +137,9 @@ Builds use the Node adapter unless `VERCEL=1` or `DEPLOY_TARGET=vercel` is set. 
 ## Branches and automatic deployment
 
 - `main`: stable release branch and Vercel Production branch.
-- `development`: shared integration branch.
-- `feature/vercel-convex`: migration and evaluation feature work.
+- `development`: the single working branch for all changes, fixes, and documentation updates.
+
+Keep only these two long-lived branches. Commit and push work to `development`, then open a pull request from `development` to `main`. Merge after the required checks pass. Use a merge commit for this recurring pull request so the branches retain shared history; after merging, fast-forward `development` to `main` and push it. Do not create a new feature, fix, or documentation branch for each task. Automatic branch deletion after merging is disabled so `development` is retained.
 
 GitHub is connected to the Vercel project, and Vercel deployment reporting to GitHub is enabled. The repository’s Deployments section records the verified production release and its website URL. [vercel.json](vercel.json) enables automatic Git deployments for `main` and disables them for other branches. A push to a development branch runs GitHub checks but does not publish the stable website. After a pull request passes the required checks and is merged into `main`, Vercel builds that commit and updates the evaluation URL. A failed build does not replace the last successful deployment.
 
