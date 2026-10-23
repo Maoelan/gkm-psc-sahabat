@@ -6,7 +6,7 @@ Reporters describe an incident, review an editable draft, choose whether staff m
 
 **This deployment is for team evaluation with synthetic data only. It is not an operational victim-reporting or emergency service.** The application interface is in Indonesian. This README is written entirely in English; route names, account identifiers, and worksheet names retain their application values.
 
-[Evaluation website](https://lapor-aman-evaluation.vercel.app/) · [Staff sign-in](https://lapor-aman-evaluation.vercel.app/masuk)
+[Evaluation website](https://lapor-aman-psc.vercel.app/) · [Staff sign-in](https://lapor-aman-psc.vercel.app/masuk)
 
 ## Technology and hosting
 
