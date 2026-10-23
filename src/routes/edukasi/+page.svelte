@@ -1,5 +1,5 @@
 <script lang="ts">import { violenceTypes, legalReferences } from '../../lib/education';</script>
-<svelte:head><title>Edukasi kekerasan perempuan dan anak | PSC SAHABAT</title><meta name="description" content="Kenali bentuk kekerasan, pilihan melapor, dan dasar hukum melalui edukasi PSC SAHABAT UPT Puskesmas Suranadi." /></svelte:head>
+<svelte:head><title>Edukasi kekerasan perempuan dan anak | Lapor Aman - PSC</title><meta name="description" content="Kenali bentuk kekerasan, pilihan melapor, dan dasar hukum melalui edukasi PSC SAHABAT UPT Puskesmas Suranadi." /></svelte:head>
 <div class="education-page page-shell">
 	<header class="education-heading"><h1>Memahami kekerasan terhadap perempuan dan anak</h1><p>Kekerasan dapat terjadi dalam keluarga, di sekolah, di tempat kerja, maupun melalui media digital. Mengenali bentuknya membantu Anda menyampaikan apa yang terjadi.</p><a class="button-primary" href="/chat">Ceritakan kejadian</a></header>
 	<nav aria-label="Isi edukasi"><a href="#jenis">Jenis kekerasan</a><a href="#anak">Perempuan dan anak</a><a href="#hukum">Dasar hukum</a><a href="#melapor">Tentang pelaporan</a></nav>

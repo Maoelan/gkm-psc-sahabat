@@ -1,8 +1,8 @@
-<svelte:head><title>PSC SAHABAT | Pelaporan UPT Puskesmas Suranadi</title></svelte:head>
+<svelte:head><title>Lapor Aman - PSC | Pelaporan UPT Puskesmas Suranadi</title></svelte:head>
 <div class="home-page">
  <section class="home-intro" aria-labelledby="home-title">
   <div>
-   <h1 id="home-title">PSC SAHABAT</h1>
+   <h1 id="home-title">Lapor Aman - PSC</h1>
    <p class="home-lead">Laporkan kekerasan yang Anda alami atau ketahui.</p>
    <p>Untuk perempuan dan anak di wilayah kerja UPT Puskesmas Suranadi. Mulai dari cerita yang Anda ingat.</p>
    <a class="button-primary home-start" href="/chat">Mulai buat laporan</a>

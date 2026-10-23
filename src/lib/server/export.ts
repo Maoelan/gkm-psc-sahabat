@@ -19,65 +19,27 @@ export function buildRecapWorkbook(
     .format(generatedAt)
     .replaceAll("-", "");
 
-  const sheets: XlsxSheet[] = [
-    {
-      name: "Rekap",
-      title: "REKAP LAPOR AMAN",
-      note: `Dibuat server pada ${stamp} WITA. Sheet ini tidak memuat NIK. Jangan dibagikan kepada pihak yang tidak berwenang.`,
-      headers: [
-        "Kode laporan",
-        "Tanggal masuk",
-        "Nama korban",
-        "Hubungan",
-        "Kebutuhan",
-        "Status",
-        "Keputusan",
-        "Alasan keputusan",
-      ],
-      rows: rows.map((row) => [
-        row.id,
-        formatReportDate(row.receivedAt),
-        row.victimName,
-        row.relation,
-        row.need,
-        row.statusLabel,
-        row.decisionLabel,
-        row.reason,
-      ]),
-      widths: [20, 22, 20, 22, 28, 20, 24, 38],
-    },
-    {
-      name: "Identitas",
-      title: "IDENTITAS KORBAN — AKSES BIDAN/PIC",
-      note: "Berisi NIK. Hanya untuk akun berwenang dengan peran admin. Jangan dibagikan tanpa kebutuhan layanan.",
-      headers: [
-        "Kode laporan",
-        "Nama korban",
-        "NIK",
-        "Status",
-        "Keputusan",
-        ...victimFields.map((field) => field.label),
-        "Dugaan jenis kekerasan",
-        "Kontak pelapor (dengan izin)",
-      ],
-      rows: rows.map((row) => [
-        row.id,
-        row.victimName,
-        row.nik || "Tidak diisi",
-        row.statusLabel,
-        row.decisionLabel,
-        ...victimFields.map(
-          (field) => row.profile?.[field.key] || "Tidak diisi",
-        ),
-        violenceTypes
-          .filter((type) => row.profile?.violenceTypes.includes(type.id))
-          .map((type) => type.name)
-          .join(", "),
-        row.contact || "Tidak tersedia",
-      ]),
-      widths: [20, 24, 22, 20, 24, ...victimFields.map(() => 28), 30, 36],
-    },
-  ];
+  const sheets: XlsxSheet[] = [{
+    name: "Rekap",
+    title: "REKAP LENGKAP LAPOR AMAN - PSC",
+    note: `Dibuat server pada ${stamp} WITA. Berisi identitas, kontak, dan kronologi; hanya untuk admin berwenang. Kolom opsional yang tidak diisi dibiarkan kosong.`,
+    headers: [
+      "Kode laporan", "Tanggal masuk", "Nama korban", "NIK korban", "Hubungan pelapor dengan korban",
+      ...victimFields.map(field => field.label),
+      "Dugaan jenis kekerasan", "Kronologi lengkap", "Waktu kejadian", "Lokasi kejadian",
+      "Bantuan yang diharapkan", "Izin dihubungi", "Nomor dan keterangan kontak pelapor",
+      "Status laporan", "Keputusan", "Alasan keputusan", "Waktu keputusan"
+    ],
+    rows: rows.map(row => [
+      row.id, formatReportDate(row.receivedAt), row.victimName === "Nama belum diisi" ? "" : row.victimName,
+      row.nik || "", row.relation,
+      ...victimFields.map(field => row.profile?.[field.key] || ""),
+      violenceTypes.filter(type => row.profile?.violenceTypes.includes(type.id)).map(type => type.name).join(", "),
+      row.story, row.incidentTime, row.incidentLocation, row.need, row.contactPreference, row.contact || "",
+      row.statusLabel, row.decisionLabel, row.reason, row.decidedAt ? formatReportDate(row.decidedAt) : ""
+    ]),
+    widths: [20, 22, 24, 22, 28, ...victimFields.map(() => 28), 32, 42, 24, 28, 30, 24, 36, 22, 26, 38, 24]
+  }];
 
   return {
     filename: `rekap-lapor-aman-${fileDate}.xlsx`,

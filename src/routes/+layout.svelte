@@ -40,7 +40,7 @@
 </script>
 
 <svelte:head>
-	<title>PSC SAHABAT | UPT Puskesmas Suranadi</title>
+	<title>Lapor Aman - PSC | UPT Puskesmas Suranadi</title>
 	<meta
 		name="description"
 		content="PSC SAHABAT, pengaduan, pendampingan dan rujukan terpadu bagi perempuan dan anak korban kekerasan di wilayah kerja UPT Puskesmas Suranadi."
@@ -52,9 +52,9 @@
 	<a class="skip-link" href="#main-content">Lewati ke isi utama</a>
 	<header class="topbar">
 		<div class="topbar-inner">
-			<a class="wordmark" href={staffArea ? '/petugas' : '/'} aria-label="PSC SAHABAT, beranda">
+			<a class="wordmark" href={staffArea ? '/petugas' : '/'} aria-label="Lapor Aman - PSC, beranda">
 				<img src="/brand/psc-sahabat.svg" alt="" width="44" height="48" />
-				<span><strong>PSC SAHABAT</strong><small>UPT Puskesmas Suranadi</small></span>
+				<span><strong>Lapor Aman - PSC</strong><small>UPT Puskesmas Suranadi</small></span>
 			</a>
 			{#if staffArea}<span class="workspace-label">Ruang kerja petugas</span>
 			{:else}<nav class="desktop-nav" aria-label="Menu utama">{#each publicLinks as item}<a href={item.href} aria-current={page.url.pathname === item.href ? 'page' : undefined}>{item.label}</a>{/each}</nav>{/if}

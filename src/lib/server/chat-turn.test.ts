@@ -66,3 +66,45 @@ describe('pemahaman keterangan', () => {
 		expect(result.source).toBe('fallback');
 	});
 });
+
+
+describe('percakapan pendampingan', () => {
+    it('mencatat kebutuhan eksplisit meskipun model gagal mengekstrak dan bertanya ulang', async () => {
+        vi.stubEnv('AI_ENABLED', 'true'); vi.stubEnv('NVIDIA_API_KEY', 'test-key');
+        const answer = 'saya butuh pendampingan, jadi bantu aku untuk menangani masalah ini karena saya takut';
+        const fetch = vi.fn(async (..._args: any[]) => Response.json({ choices: [{ message: { content: JSON.stringify({ reply: 'Saya mencatat kebutuhan pendampingan Anda.', extracted_fields: { need: null }, next_field: 'need', question: 'Bantuan atau dukungan apa yang Anda harapkan setelah kejadian ini?' }) } }] }));
+        vi.stubGlobal('fetch', fetch);
+        const result = await makeChatTurn({ fields: { incidentTime: 'tadi siang', incidentLocation: 'dirumah', need: '' }, story: answer, lastAnswer: answer, answerField: 'need' });
+        expect(result.fields?.need).toBe(answer);
+        expect(result.flowComplete).toBe(true);
+        expect(result.question).toBeNull();
+        expect(result.message).not.toContain('apa yang Anda harapkan');
+        expect(result.message).toContain('takut');
+        expect(result.message).toContain('Selesai');
+        const sent = JSON.parse(fetch.mock.calls[0][1].body);
+        expect(sent.messages[0].content).toContain('reply wajib mengakui');
+    });
+    it('tetap menanggapi cerita saat provider tidak tersedia', async () => {
+        vi.stubEnv('AI_ENABLED', 'false');
+        const result = await makeChatTurn({ fields: empty, story: 'Saya mengalami KDRT dari suami saya', lastAnswer: 'Saya mengalami KDRT dari suami saya' });
+        expect(result.source).toBe('fallback');
+        expect(result.reply).toContain('bukan kesalahan Anda');
+        expect(result.question).toContain('Kapan');
+    });
+    it('tidak mengulang instruksi selesai setelah pertanyaan layanan', async () => {
+        vi.stubEnv('AI_ENABLED', 'true'); vi.stubEnv('NVIDIA_API_KEY', 'test-key');
+        vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { content: JSON.stringify({ reply: 'Kebutuhan pendampingan Anda dapat ditinjau petugas setelah laporan dikirim. Saya belum bisa memastikan hasilnya.', extracted_fields: {}, next_field: null, question: 'Bantuan apa yang Anda harapkan?' }) } }] })));
+        const result = await makeChatTurn({ fields: { incidentTime: 'tadi siang', incidentLocation: 'di rumah', need: 'pendampingan' }, story: 'KDRT', lastAnswer: 'Apakah petugas kemungkinan besar akan membantuku??' });
+        expect(result.question).toBeNull();
+        expect(result.message).not.toContain('Selesai');
+    });
+});
+
+
+it('a skipped time answer does not silently skip the need field', async () => {
+    vi.stubEnv('AI_ENABLED', 'false');
+    const result = await makeChatTurn({ fields: empty, story: 'Cerita sintetis.', lastAnswer: 'Saya belum tahu', answerField: 'incidentTime' });
+    expect(result.fields?.incidentTime).toBe('Belum diketahui');
+    expect(result.fields?.need).toBe('');
+    expect(result.missingField).toBe('incident_location');
+});

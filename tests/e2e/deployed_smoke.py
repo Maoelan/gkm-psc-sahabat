@@ -30,10 +30,10 @@ try:
         assert reporter.request.get(base + '/api/health').json() == {'status': 'ok'}
         assert reporter.request.get(base + '/api/staff/reports').status == 401
         assert reporter.request.post(base + '/api/chat/session', headers={'Origin': 'https://outside.example.test'}, data={}).status == 403
-        expect(home.get_by_role('dialog', name='Selamat datang di PSC SAHABAT')).to_be_visible()
+        expect(home.get_by_role('dialog', name='Selamat datang di Lapor Aman - PSC')).to_be_visible()
         home.screenshot(path=str(output / 'evaluation-intro-mobile.png'), full_page=True)
         home.get_by_role('button', name='Saya mengerti, lanjutkan').click()
-        expect(home.get_by_role('heading', level=1)).to_have_text('PSC SAHABAT')
+        expect(home.get_by_role('heading', level=1)).to_have_text('Lapor Aman - PSC')
         home.screenshot(path=str(output / 'evaluation-home-mobile.png'), full_page=True)
         home.goto(base + '/edukasi', wait_until='domcontentloaded')
         expect(home.locator('.education-types article')).to_have_count(6)
@@ -75,16 +75,26 @@ try:
         assert page.locator('#staff-reply').input_value().strip()
         assert not sent
         page.locator('#staff-reply').fill('Kapan kira-kira kejadian itu terjadi?')
-        page.get_by_role('button', name='Kirim balasan', exact=True).click()
+        page.locator('#staff-reply').press('Enter')
         expect(page.locator('#staff-reply')).to_have_value('')
         reply = reporter.request.post(base + '/api/chat/handoff/messages', headers=reporter_headers, data={'body': 'Kemarin sore'})
         assert reply.status in [200, 201]
         expect(page.locator('.live-log')).to_contain_text('Kemarin sore')
         page.screenshot(path=str(output / 'evaluation-staff-guidance.png'), full_page=True)
-        page.get_by_role('button', name='Tutup percakapan', exact=True).click()
+        page.get_by_role('button', name='Hentikan percakapan pelapor', exact=True).click()
+        confirmation = page.get_by_role('dialog', name='Hentikan percakapan pelapor?')
+        expect(confirmation).to_be_visible()
+        confirmation.get_by_role('button', name='Batal', exact=True).click()
+        expect(page.locator('#staff-reply')).to_be_enabled()
+        page.get_by_role('button', name='Hentikan percakapan pelapor', exact=True).click()
+        confirmation.get_by_role('button', name='Hentikan percakapan', exact=True).click()
+        expect(confirmation).not_to_be_visible()
         expect(page.locator('.live-status-note')).to_contain_text('ditutup')
         collected = reporter.request.get(base + '/api/chat/handoff').json()
         assert collected['collectedFields']['incidentTime'] == 'Kemarin sore'
+        assert collected['conversationEnded'] is True
+        assert reporter.request.post(base + '/api/chat/turn', headers=reporter_headers, data={'story': narrative, 'userMessage': 'Pesan sintetis setelah admin menghentikan chat.'}).status == 409
+        assert reporter.request.post(base + '/api/chat/handoff/messages', headers=reporter_headers, data={'body': 'Pesan sintetis setelah admin menghentikan chat.'}).status == 409
 
         stage = 'draft and idempotent submission'
         draft_input = {'victimName': 'Uji Deployment (Data Sintetis)', 'victimNik': '0000000000000001', 'relation': 'Diri sendiri', 'story': narrative, 'incidentTime': 'Kemarin sore', 'incidentLocation': 'Rumah simulasi', 'need': 'Pendampingan petugas (latihan)', 'safeContact': 'no', 'contactDetails': ''}
@@ -108,7 +118,15 @@ try:
         assert any('Kemarin sore' in m['body'] for m in staff.request.get(prefix + '/chat').json()['messages'])
         decision = staff.request.post(prefix + '/decision', headers=staff_headers, data={'decision': 'follow_up_not_required', 'reason': 'Data sintetis untuk pemeriksaan deployment, bukan laporan kejadian nyata.'})
         assert decision.status == 200
-        assert staff.request.get(base + '/api/staff/recap/export').status == 200
+        exported = staff.request.get(base + '/api/staff/recap/export')
+        assert exported.status == 200
+        import io, zipfile
+        with zipfile.ZipFile(io.BytesIO(exported.body())) as workbook:
+            sheet = workbook.read('xl/worksheets/sheet1.xml')
+            assert b'0000000000000001' in sheet
+            assert narrative.encode() in sheet
+            assert b'Kronologi lengkap' in sheet
+            assert b'Koordinasi sintetis untuk pengujian' in sheet
         assert reporter.request.get(base + '/api/staff/recap/export').status == 401
 
         stage = 'deployed summary and logout'
@@ -118,6 +136,7 @@ try:
         page.screenshot(path=str(output / 'evaluation-recap-desktop.png'), full_page=True)
         stage = 'confirmed deletion of this smoke test record only'
         page.get_by_role('button', name='Lihat detail', exact=True).click()
+        expect(page.locator('.report-identity')).to_contain_text('0000 0000 0000 0001')
         page.get_by_text('Tindakan laporan', exact=True).click()
         page.get_by_role('button', name='Hapus laporan', exact=True).click()
         deletion = page.get_by_role('dialog', name='Hapus laporan ini?')

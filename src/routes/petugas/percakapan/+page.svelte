@@ -360,21 +360,31 @@
 		}
 	}
 
-	async function closeChat() {
+    function replyKeydown(event: KeyboardEvent) {
+        if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !event.ctrlKey && !event.altKey && !event.metaKey && window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+            event.preventDefault();
+            void sendReply();
+        }
+    }
+
+    let endChatDialog: HTMLDialogElement;
+	async function closeChat(endConversation = false) {
 		if (!selectedId || !canClose || busy) return;
 		busy = true;
 		error = '';
 		notice = '';
 		try {
 			const payload = (await staffPost(
-				`/api/staff/chats/${encodeURIComponent(selectedId)}/close`
+				`/api/staff/chats/${encodeURIComponent(selectedId)}/close`,
+                { endConversation, confirmed: endConversation }
 			)) as { handoff?: StaffHandoff; message?: HandoffThreadMessage | null };
 			if (payload.handoff) handoff = payload.handoff;
 			if (payload.message) {
 				messages = [...messages, payload.message];
 				cursor = payload.message.id;
 			}
-			notice = 'Percakapan ditutup. Pelapor dapat melanjutkan draf.';
+			notice = endConversation ? 'Percakapan pelapor dihentikan. Draf tetap dapat diperiksa dan dikirim.' : 'Bantuan selesai. Pelapor dapat melanjutkan percakapan atau draf.';
+            endChatDialog?.close();
 			await scrollToLatest();
 			await refreshQueue();
 		} catch (caught) {
@@ -397,7 +407,7 @@
 </script>
 
 <svelte:head>
-	<title>Percakapan langsung | LAPOR AMAN</title>
+	<title>Percakapan langsung | Lapor Aman - PSC</title>
 </svelte:head>
 
 <div class="live-page" class:thread-open={detailsOpen}>
@@ -577,12 +587,13 @@
 								</p>
 							</div>
 							{#if canClose}
-								<button class="button-secondary danger-button" type="button" onclick={closeChat} disabled={busy}>
-									{busy ? 'Memproses...' : 'Tutup percakapan'}
+								<button class="button-secondary danger-button" type="button" onclick={() => closeChat()} disabled={busy}>
+									{busy ? 'Memproses...' : 'Akhiri bantuan'}
 								</button>
 							{/if}
 						</div>
 
+                        {#if data.isAdmin && canClose}<div class="end-chat-action"><button class="link-button" type="button" disabled={busy} onclick={() => endChatDialog.showModal()}>Hentikan percakapan pelapor</button></div>{/if}
 						<div class="live-status-note" class:closed={!isHandoffOpen(handoff.status)}>
 							{handoff.status === 'active' ? 'Balasan otomatis AI dijeda selama petugas bergabung.' : handoffStatusCopy(handoff.status)}
 						</div>
@@ -616,16 +627,17 @@
 								<textarea
 									id="staff-reply"
 									bind:this={replyInput}
+                                    onkeydown={replyKeydown}
 									bind:value={input}
 									maxlength="2000"
 									rows="3"
-									placeholder="Tulis jawaban yang jelas, tanpa meminta NIK atau kontak lengkap."
+									placeholder="Tulis balasan untuk pelapor."
 								></textarea>
 								<div class="live-reply-actions">
 									<p>
 										{data.isAdmin && !handoff.claimedByMe
 											? 'Anda admin; balasan ini tercatat atas nama Anda.'
-											: 'Balasan langsung terlihat oleh pelapor.'}
+											: 'Balasan langsung terlihat oleh pelapor. Di komputer, Enter untuk kirim; Shift+Enter untuk baris baru.'}
 									</p>
 									<button class="button-primary" type="submit" disabled={busy}>
 										{busy ? 'Mengirim...' : 'Kirim balasan'}
@@ -648,7 +660,21 @@
 	</section>
 </div>
 
+<dialog bind:this={endChatDialog} aria-labelledby="end-chat-title" oncancel={(event) => { if (busy) event.preventDefault(); }}>
+    <h2 id="end-chat-title">Hentikan percakapan pelapor?</h2>
+    <p>Pelapor tidak bisa mengirim pesan lagi pada percakapan ini. Cerita yang sudah tersimpan tetap ada; pelapor masih dapat memeriksa, memperbaiki, dan mengirim draf laporannya.</p>
+    {#if error}<p role="alert">{error}</p>{/if}
+    <div class="end-chat-buttons"><button class="button-secondary" type="button" onclick={() => endChatDialog.close()} disabled={busy}>Batal</button><button class="button-primary" type="button" onclick={() => closeChat(true)} disabled={busy}>{busy ? 'Menghentikan…' : 'Hentikan percakapan'}</button></div>
+</dialog>
+
 <style>
+    dialog { width: calc(100% - 32px); max-width: 520px; max-height: 85dvh; overflow: auto; padding: 24px; border: 1px solid var(--border); border-radius: 16px; color: var(--ink); }
+    dialog::backdrop { background: rgb(7 50 75 / .45); }
+    dialog h2 { font-size: 1.25rem; }
+    .end-chat-buttons { display: flex; flex-wrap: wrap; gap: 12px; justify-content: end; }
+    .end-chat-action { padding: 8px 16px; }
+    .end-chat-action button { color: var(--danger); }
+
 	.live-page { padding: 28px 0 56px; background: var(--ground); }
 	.live-shell {
 		width: min(1240px, calc(100% - 48px));

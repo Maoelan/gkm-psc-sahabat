@@ -8,6 +8,7 @@ import {
   messages,
   openHandoff,
   audit,
+  requireOpenConversation,
 } from "./model";
 import { sealed, sender, source } from "./schema";
 
@@ -46,6 +47,7 @@ export const saveTurn = mutation({
   handler: async (ctx, a) => {
     serverOnly(a.key);
     const s = await reporter(ctx, a.sessionId);
+    requireOpenConversation(s);
     if (s.reportId) return { submitted: true, blocked: false };
     const h = await openHandoff(ctx, s);
     if (a.user)

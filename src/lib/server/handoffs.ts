@@ -40,19 +40,19 @@ function mapStaff(
     claimedByName: name,
   };
 }
-function mapMessage(m: Message): HandoffThreadMessage {
+function mapMessage(m: Message, showSensitive = false): HandoffThreadMessage {
   return {
     id: m.id,
     sender: m.sender,
     source: m.source,
-    body: maskSensitiveText(unseal(m.body, "chat_message")),
+    body: showSensitive ? unseal(m.body, "chat_message") : maskSensitiveText(unseal(m.body, "chat_message")),
     createdAt: new Date(m.createdAt).toISOString(),
   };
 }
-function mapMessages(rows: Message[]) {
+function mapMessages(rows: Message[], showSensitive = false) {
   return rows.flatMap((m) => {
     try {
-      return [mapMessage(m)];
+      return [mapMessage(m, showSensitive)];
     } catch {
       return [];
     }
@@ -116,6 +116,7 @@ export async function getReporterHandoff(
       messages: [],
       latestMessageId: null,
       collectedFields: {},
+      conversationEnded: Boolean(s.session.conversationEndedAt),
     };
   const rows = afterCursor(
     s.messages.filter((m) => m.handoffId === h.id),
@@ -124,9 +125,10 @@ export async function getReporterHandoff(
   const assistance = readAssistance(s.assistance);
   return {
     handoff: mapHandoff(h),
-    messages: mapMessages(rows),
+    messages: mapMessages(rows, true),
     latestMessageId: rows.at(-1)?.id ?? after ?? null,
     collectedFields: assistance ? collectedChatFields(assistance) : {},
+    conversationEnded: Boolean(s.session.conversationEndedAt),
   };
 }
 export async function sendReporterHandoffMessage(
@@ -138,7 +140,7 @@ export async function sendReporterHandoffMessage(
     message: serviceMessage(body.trim()),
   });
   const s = await getReporterHandoff(session.id);
-  return { handoff: s.handoff!, message: mapMessage(m), latestMessageId: m.id };
+  return { handoff: s.handoff!, message: mapMessage(m, true), latestMessageId: m.id };
 }
 export async function getStaffChatQueue(
   staff: StaffSession,
@@ -241,7 +243,7 @@ export async function getStaffChatThread(
   });
   return {
     handoff: mapStaff(s.handoff, staff, s.claimedByName),
-    messages: mapMessages(s.messages),
+    messages: mapMessages(s.messages, staff.roles.includes("admin")),
     latestMessageId: s.messages.at(-1)?.id ?? null,
   };
 }
@@ -254,7 +256,7 @@ export async function getStaffChatMessages(
   const rows = afterCursor(s.messages, after);
   return {
     handoff: mapStaff(s.handoff, staff, s.claimedByName),
-    messages: mapMessages(rows),
+    messages: mapMessages(rows, staff.roles.includes("admin")),
     latestMessageId: rows.at(-1)?.id ?? after ?? null,
   };
 }
@@ -314,6 +316,7 @@ export async function getStaffChatAssistance(
 async function finish(
   target: { sessionId: string } | { staff: StaffSession; handoffId: string },
   requestId?: string | null,
+  endConversation = false,
 ) {
   const isStaff = "staff" in target;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -338,9 +341,13 @@ async function finish(
         sessionId: isStaff ? undefined : target.sessionId,
         handoffId: s.handoff.id,
         revision: s.session.messageSeq,
+        endConversation,
+        confirmed: endConversation,
         content: seal(content, "staff_assistance"),
         message: serviceMessage(
-          isStaff
+          endConversation
+            ? "Admin telah menghentikan percakapan ini. Pesan baru tidak dapat dikirim; Anda tetap dapat memeriksa, memperbaiki, dan mengirim draf laporan."
+            : isStaff
             ? "Percakapan dengan petugas sudah ditutup. Anda bisa melanjutkan draf atau meminta bantuan lagi."
             : "Bantuan petugas diakhiri oleh pelapor. Anda bisa melanjutkan dengan panduan atau meminta bantuan lagi.",
         ),
@@ -372,8 +379,9 @@ export async function closeStaffChat(
   staff: StaffSession,
   handoffId: string,
   requestId?: string | null,
+  endConversation = false,
 ) {
-  return finish({ staff, handoffId }, requestId);
+  return finish({ staff, handoffId }, requestId, endConversation);
 }
 export async function cancelReporterHandoff(
   session: ReporterSession,

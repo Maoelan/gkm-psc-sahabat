@@ -13,6 +13,7 @@ export type ReporterSession = {
   mode: ServiceMode;
   csrfToken: string;
   expiresAt: Date;
+  conversationEndedAt?: number;
 };
 export async function createSession(
   cookies: Cookies,
