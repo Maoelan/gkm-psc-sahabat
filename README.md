@@ -46,6 +46,8 @@ The six categories follow the supplied KTPA/TPPO training material: physical vio
 
 Chat focuses on chronology, approximate incident time, general location, and requested assistance. Reporters can skip unknown details, add information, edit the draft, and decide whether to submit. Form identity fields are encrypted and excluded from AI input. Narrative redaction is best effort and does not guarantee anonymity.
 
+The assistant receives the selected reporter relationship and distinguishes survivors, family or companions, and other witnesses. It recovers explicit incident details from the full narrative before choosing a missing topic, including during provider failures. Current refuge is not treated as the incident location. Explicit corrections can update collected details, while skipped answers remain respected. The question, composer label, and quick answers keep the same topic during background status polling. This reduces repeated questions but does not guarantee perfect interpretation; reporters can correct the final draft.
+
 Contact permission is requested during final review. A reporter who agrees to contact must provide their own safe phone number and may add timing or contact restrictions. This also applies when reporting on another person's behalf. A report can be submitted without contact permission.
 
 ### Staff and administrator actions
@@ -175,7 +177,7 @@ npm run security:scan -- --history --staged --client
 npm audit --audit-level=low
 ```
 
-The interface revision was verified on **23 October 2026** with 95 unit tests, 28 native Convex integration tests, type checks, Node and Vercel builds, secret scans, and a dependency audit reporting zero known vulnerabilities. Development and production browser flows cover widths from 320 to 1440 pixels, touch emulation, landscape layouts, and reduced viewport height while the composer remains focused. These are browser-emulation checks; physical Android and iOS device testing remains necessary before operational rollout. Hosted verification covered staff takeover, manual replies, confirmed submission, optional fields, identity access, export, notifications, and deletion of its own synthetic test report. A separate live NVIDIA check verified that the AI explains optional victim information correctly.
+The interface revision was verified on **23 October 2026** with 117 unit tests and 28 native Convex integration tests. Checks include type checks, production builds, and secret scans. Browser flows cover widths from 320 to 1440 pixels, touch emulation, landscape layouts, and reduced viewport height while the composer remains focused. Additional chat regressions cover narrative recovery during provider failures, all three reporter relationships, explicit corrections, and question/quick-answer consistency during polling. These are browser-emulation checks; physical Android and iOS device testing remains necessary before operational rollout. Hosted verification has covered staff takeover, manual replies, confirmed submission, optional fields, identity access, export, notifications, and deletion of its own synthetic test report. Live NVIDIA checks have verified optional victim information and context handling for each reporter relationship.
 
 These checks are a dated release snapshot, not a guarantee of permanent security. Rerun the appropriate checks after changes.
 

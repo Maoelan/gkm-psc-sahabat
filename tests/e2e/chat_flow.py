@@ -378,11 +378,58 @@ with sync_playwright() as p:
     staff.get_by_role('button', name='Keluar akun', exact=True).click()
     expect(staff).to_have_url(base + '/')
     assert staff_context.request.get(base + '/api/staff/reports').status == 401
+    assert not errors, errors
+    print('E2E_OK: access/CSRF, limits, cookies/headers, chat/retry/handoff, report/recap/NIK/export, responsive navigation, decisions, receipt copy, private staff assistance, manual question editing, collected fields, preserved review edits and assisted recap')
+    print('Artifacts:', out)
+    # Actual fallback must retain earlier facts, and polling must not reset a model-selected topic.
+    for relation in ['Diri sendiri', 'Keluarga atau pendamping', 'Pihak lain yang mengetahui kejadian']:
+        context = browser.new_context(viewport={'width':390, 'height':844}, is_mobile=True, has_touch=True)
+        page = context.new_page()
+        page.on('pageerror', lambda exc: errors.append(str(exc)))
+        page.goto(base + '/chat', wait_until='networkidle')
+        welcome = page.get_by_role('button', name='Saya mengerti, lanjutkan')
+        if welcome.is_visible(): welcome.click()
+        page.get_by_role('button', name='Ya, saya aman', exact=True).click()
+        page.locator('input[value="' + relation + '"]').check()
+        with page.expect_response(lambda r: '/api/chat/session' in r.url and r.request.method == 'POST') as context_session:
+            page.get_by_role('button', name='Mulai bercerita', exact=True).click()
+        assert context_session.value.status == 201, context_session.value.text()
+        expect(page.locator('#chat-answer')).to_be_visible()
+        first = 'Saya mengalami kekerasan dirumah' if relation == 'Diri sendiri' else 'Anak tetangga mengalami kekerasan dirumah'
+        page.locator('#chat-answer').fill(first)
+        with page.expect_response(lambda r: '/api/chat/turn' in r.url and r.request.method == 'POST') as first_turn:
+            page.get_by_role('button', name='Kirim', exact=True).click()
+        assert first_turn.value.request.post_data_json['relation'] == relation
+        assert first_turn.value.json()['fields']['incidentLocation'] == 'dirumah'
+        expect(page.locator('label[for="chat-answer"]')).to_have_text('Waktu kejadian')
+        detail = 'Kejadian itu terjadi hari ini, kekerasan dilakukan paman, setelah dirumah paman tiba-tiba memuluk kepala menggunakan gagang sapu, katanya gara-gara lupa mencuci piring tadi pagi.'
+        page.locator('#chat-answer').fill(detail)
+        page.get_by_role('button', name='Kirim', exact=True).click()
+        expect(page.locator('label[for="chat-answer"]')).to_have_text('Bantuan yang diharapkan')
+        expect(page.get_by_role('button', name='Pendampingan', exact=True)).to_be_visible()
+        page.wait_for_timeout(4200)
+        expect(page.locator('label[for="chat-answer"]')).to_have_text('Bantuan yang diharapkan')
+        expect(page.get_by_role('button', name='Rumah', exact=True)).to_have_count(0)
+        capture(page, 'context-retained-' + str(['Diri sendiri', 'Keluarga atau pendamping', 'Pihak lain yang mengetahui kejadian'].index(relation)))
+        if relation != 'Diri sendiri':
+            assert 'Anda mengalami kekerasan' not in page.locator('.message-log').inner_text()
+        # A legitimate next question may be selected out of the default field order.
+        page.route('**/api/chat/turn', lambda route: route.fulfill(json={
+            'userMessageId':'synthetic-topic-test', 'flowComplete':False, 'source':'nvidia',
+            'fields':{'incidentTime':'hari ini', 'incidentLocation':'', 'need':''},
+            'missingField':'need', 'message':'Bantuan apa yang ingin diajukan?', 'question':'Bantuan apa yang ingin diajukan?'
+        }))
+        page.locator('#chat-answer').fill('Saya masih takut')
+        page.get_by_role('button', name='Kirim', exact=True).click()
+        expect(page.locator('#chat-answer')).to_have_value('')
+        page.wait_for_timeout(4200)
+        expect(page.locator('label[for="chat-answer"]')).to_have_text('Bantuan yang diharapkan')
+        expect(page.get_by_role('button', name='Pendampingan', exact=True)).to_be_visible()
+        context.close()
+    print('E2E_CONTEXT_OK: narrative recovery, reporter roles, consistent questions and quick answers after polling')
     rate_context = browser.new_context()
     statuses = [rate_context.request.post(base + '/api/chat/session', data={}).status for _ in range(13)]
     assert 429 in statuses, statuses
     rate_context.close()
     assert not errors, errors
-    print('E2E_OK: access/CSRF, limits, cookies/headers, chat/retry/handoff, report/recap/NIK/export, responsive navigation, decisions, receipt copy, private staff assistance, manual question editing, collected fields, preserved review edits and assisted recap')
-    print('Artifacts:', out)
     browser.close()

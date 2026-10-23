@@ -1,10 +1,7 @@
 import { json } from "@sveltejs/kit";
 import { randomUUID } from "node:crypto";
 import {
-  directAnswerFields,
-  fallbackChatTurn,
   makeChatTurn,
-  remainingChatFields,
   type ChatFields,
   type ChatTurnResult,
 } from "../../../../lib/server/ai";
@@ -57,26 +54,15 @@ export async function POST({ cookies, request, locals }) {
   const handoffAlreadyOpen = await hasOpenHandoff(session.id);
   const automaticChat = session.mode !== "unavailable" && !handoffAlreadyOpen;
   const history = automaticChat ? await recentChatHistory(session.id) : [];
-  const result: ChatTurnResult =
-    automaticChat
-      ? await makeChatTurn({
+  const result: ChatTurnResult = await makeChatTurn({
           fields,
           story: parsed.data.story,
           lastAnswer: userMessage,
           history,
           answerField: parsed.data.answerField,
-        })
-      : (() => {
-          const answered = directAnswerFields(
-            fields,
-            userMessage,
-            parsed.data.answerField,
-          );
-          return {
-            ...fallbackChatTurn(remainingChatFields(answered)),
-            fields: answered,
-          };
-        })();
+          relation: parsed.data.relation,
+          structuredOnly: !automaticChat,
+        });
   const userMessageId = randomUUID();
   try {
     // The mutation rechecks the session and handoff after provider work finishes.
