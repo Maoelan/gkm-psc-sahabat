@@ -632,6 +632,7 @@ describe("Convex lifecycle", () => {
             {
               message: {
                 content: JSON.stringify({
+                  scope: "reporting",
                   reply:
                     "Laporan dapat dibaca petugas yang ditugaskan dan admin.",
                   next_field: "incident_time",

@@ -40,7 +40,7 @@
 </script>
 
 <svelte:head>
-	<title>Lapor Aman - PSC | UPT Puskesmas Suranadi</title>
+	<title>Lapor Aman - PSC Sahabat | UPT Puskesmas Suranadi</title>
 	<meta
 		name="description"
 		content="PSC SAHABAT, pengaduan, pendampingan dan rujukan terpadu bagi perempuan dan anak korban kekerasan di wilayah kerja UPT Puskesmas Suranadi."
@@ -52,9 +52,9 @@
 	<a class="skip-link" href="#main-content">Lewati ke isi utama</a>
 	<header class="topbar">
 		<div class="topbar-inner">
-			<a class="wordmark" href={staffArea ? '/petugas' : '/'} aria-label="Lapor Aman - PSC, beranda">
+			<a class="wordmark" href={staffArea ? '/petugas' : '/'} aria-label="Lapor Aman - PSC Sahabat, beranda">
 				<img src="/brand/psc-sahabat.svg" alt="" width="44" height="48" />
-				<span><strong>Lapor Aman - PSC</strong><small>UPT Puskesmas Suranadi</small></span>
+				<span><strong>Lapor Aman - PSC Sahabat</strong><small>UPT Puskesmas Suranadi</small></span>
 			</a>
 			{#if staffArea}<span class="workspace-label">Ruang kerja petugas</span>
 			{:else}<nav class="desktop-nav" aria-label="Menu utama">{#each publicLinks as item}<a href={item.href} aria-current={page.url.pathname === item.href ? 'page' : undefined}>{item.label}</a>{/each}</nav>{/if}
@@ -79,7 +79,7 @@
 	{#if !staffArea && page.url.pathname !== '/masuk'}<FirstVisit />{/if}
     {#if staffArea}<nav class="staff-mobile-nav" aria-label="Menu petugas"><a href="/petugas" aria-current={page.url.pathname === '/petugas' ? 'page' : undefined}>Laporan</a><a href="/petugas/percakapan" aria-current={page.url.pathname === '/petugas/percakapan' ? 'page' : undefined}>Percakapan</a>{#if data.staff?.roles.includes('admin')}<a href="/rekap" aria-current={page.url.pathname === '/rekap' ? 'page' : undefined}>Rekap</a>{/if}</nav>{/if}
 	<main id="main-content" tabindex="-1">{@render children()}</main>
-	{#if !staffArea && !reporting}<footer class="site-footer"><div class="footer-inner"><div class="footer-institution"><img src="/brand/puskesmas-logo.png" width="44" height="48" alt="Logo Puskesmas" /><div><strong>UPT Puskesmas Suranadi</strong><p>PSC SAHABAT untuk wilayah kerja Puskesmas Suranadi.</p><p>© {new Date().getFullYear()} UPT Puskesmas Suranadi.</p></div></div><div class="footer-links"><a href="/edukasi">Edukasi</a><a href="/panduan#privasi">Pemberitahuan privasi</a><a href="https://puskesmassuranadi-dikes.lombokbaratkab.go.id/" target="_blank" rel="noopener noreferrer">Profil Puskesmas Suranadi</a><a href="/masuk">Masuk petugas</a></div></div></footer>{/if}
+	{#if !staffArea && !reporting}<footer class="site-footer"><div class="footer-inner"><div class="footer-institution"><img src="/brand/puskesmas-logo.png" width="44" height="48" alt="Logo Puskesmas" /><div><strong>UPT Puskesmas Suranadi</strong><p>PSC SAHABAT untuk wilayah kerja Puskesmas Suranadi.</p><p>© {new Date().getFullYear()} UPT Puskesmas Suranadi.</p></div></div><div class="footer-links"><a href="https://puskesmassuranadi-dikes.lombokbaratkab.go.id/" target="_blank" rel="noopener noreferrer">Profil Puskesmas Suranadi</a></div></div></footer>{/if}
 </div>
 
 <style>

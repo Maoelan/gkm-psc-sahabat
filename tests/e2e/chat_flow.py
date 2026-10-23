@@ -38,9 +38,11 @@ with sync_playwright() as p:
     assert reporter_context.request.post(base + '/api/staff/chats/00000000-0000-4000-8000-000000000000/assistance', data={}).status == 401
     assert reporter_context.request.post(base + '/api/chat/session', data='x' * (128 * 1024 + 1), headers={'Content-Type': 'application/json'}).status == 413
     reporter.goto(base, wait_until='networkidle')
-    expect(reporter.get_by_role('dialog', name='Selamat datang di Lapor Aman - PSC')).to_be_visible()
+    expect(reporter.get_by_role('dialog', name='Selamat datang di Lapor Aman - PSC Sahabat')).to_be_visible()
     capture(reporter, 'first-visit-mobile')
     reporter.get_by_role('button', name='Saya mengerti, lanjutkan').click()
+    expect(reporter.locator('.site-footer a')).to_have_count(1)
+    expect(reporter.locator('.site-footer a')).to_have_text('Profil Puskesmas Suranadi')
     for width in [1440, 768, 430, 390, 360, 320]:
         reporter.set_viewport_size({'width':width, 'height':844})
         capture(reporter, f'home-{width}')
@@ -58,7 +60,8 @@ with sync_playwright() as p:
     reporter.get_by_role('button', name='Ya, saya aman', exact=True).click()
     reporter.locator('input[value="Diri sendiri"]').check()
     expect(reporter.get_by_label('Nama korban atau nama panggilan (opsional)', exact=True)).to_be_visible()
-    expect(reporter.get_by_label('NIK korban (opsional)', exact=True)).to_be_visible()
+    expect(reporter.get_by_label('NIK korban (opsional)', exact=True)).to_have_count(0)
+    reporter.get_by_label('Nama korban atau nama panggilan (opsional)', exact=True).fill('Korban Uji Browser')
     capture(reporter, 'reporter-relation-mobile')
     with reporter.expect_response(lambda response: '/api/chat/session' in response.url and response.request.method == 'POST') as session_created:
         reporter.get_by_role('button', name='Mulai bercerita', exact=True).click()
@@ -71,6 +74,8 @@ with sync_playwright() as p:
     assert reporter_context.request.post(base + '/api/chat/draft', headers={'x-csrf-token': session_payload['csrfToken'], 'Content-Type': 'application/json'}, data=b'{invalid').status == 400
     assert reporter_context.request.get(base + '/api/staff/reports').status == 401
     send('Saya mengalami kekerasan oleh orang yang saya kenal.')
+    send('Buatkan resep nasi goreng')
+    expect(reporter.locator('.message-log')).to_contain_text('Saya hanya dapat membantu cerita kekerasan')
     # Side questions must not become the time field.
     send('Siapa yang bisa melihat laporan?')
     expect(reporter.locator('label[for="chat-answer"]')).to_have_text('Waktu kejadian')
@@ -163,7 +168,9 @@ with sync_playwright() as p:
     expect(reporter.get_by_role('button', name='Selesai dan periksa draf')).to_be_enabled()
     reporter.get_by_role('button', name='Selesai dan periksa draf').click()
     reporter.get_by_text('Lengkapi data korban', exact=False).click()
-    reporter.get_by_label('Nama korban', exact=True).fill('Korban Uji Browser')
+    expect(reporter.locator('.review-name')).to_contain_text('Korban Uji Browser')
+    expect(reporter.get_by_label('Nama korban', exact=True)).to_have_count(0)
+    expect(reporter.locator('#review-nik-help')).to_have_count(0)
     reporter.locator('#review-nik').fill('0000000000000001')
     reporter.locator('#review-birthDate').fill('2000-02-20')
     reporter.locator('#review-parentName').fill('Orang Tua Uji')
@@ -180,6 +187,7 @@ with sync_playwright() as p:
         assert detail in text, detail
     assert text.count('Saya juga diancam') == 1
     assert 'Siapa yang bisa melihat' not in text
+    assert 'Buatkan resep' not in text
     reporter.locator('input[type="radio"][value="no"]').check()
     reporter.locator('.privacy-check input').check()
     capture(reporter, 'review-mobile')

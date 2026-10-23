@@ -6,6 +6,7 @@ import {
   makeChatTurn,
   remainingChatFields,
   type ChatFields,
+  type ChatTurnResult,
 } from "../../../../lib/server/ai";
 import { recentChatHistory } from "../../../../lib/server/chat-history";
 import { api, mutate, seal, BackendError } from "../../../../lib/server/convex";
@@ -56,7 +57,7 @@ export async function POST({ cookies, request, locals }) {
   const handoffAlreadyOpen = await hasOpenHandoff(session.id);
   const automaticChat = session.mode !== "unavailable" && !handoffAlreadyOpen;
   const history = automaticChat ? await recentChatHistory(session.id) : [];
-  const result =
+  const result: ChatTurnResult =
     automaticChat
       ? await makeChatTurn({
           fields,
@@ -113,6 +114,7 @@ export async function POST({ cookies, request, locals }) {
   return json({
     userMessageId,
     flowComplete: result.flowComplete,
+    excludeFromStory: result.excludeFromStory ?? false,
     message: result.message,
     question: result.question,
     source: result.source,

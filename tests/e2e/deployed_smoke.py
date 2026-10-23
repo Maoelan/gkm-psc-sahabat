@@ -30,10 +30,12 @@ try:
         assert reporter.request.get(base + '/api/health').json() == {'status': 'ok'}
         assert reporter.request.get(base + '/api/staff/reports').status == 401
         assert reporter.request.post(base + '/api/chat/session', headers={'Origin': 'https://outside.example.test'}, data={}).status == 403
-        expect(home.get_by_role('dialog', name='Selamat datang di Lapor Aman - PSC')).to_be_visible()
+        expect(home.get_by_role('dialog', name='Selamat datang di Lapor Aman - PSC Sahabat')).to_be_visible()
         home.screenshot(path=str(output / 'evaluation-intro-mobile.png'), full_page=True)
         home.get_by_role('button', name='Saya mengerti, lanjutkan').click()
-        expect(home.get_by_role('heading', level=1)).to_have_text('Lapor Aman - PSC')
+        expect(home.locator('.site-footer a')).to_have_count(1)
+        expect(home.locator('.site-footer a')).to_have_text('Profil Puskesmas Suranadi')
+        expect(home.get_by_role('heading', level=1)).to_have_text('Lapor Aman - PSC Sahabat')
         home.screenshot(path=str(output / 'evaluation-home-mobile.png'), full_page=True)
         home.goto(base + '/edukasi', wait_until='domcontentloaded')
         expect(home.locator('.education-types article')).to_have_count(6)
