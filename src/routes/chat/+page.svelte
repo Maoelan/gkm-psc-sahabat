@@ -342,6 +342,7 @@
 				},
 				body: JSON.stringify({
 					story: nextStory.trim(),
+					relation,
 					incidentTime: incidentTime.trim(),
 					incidentLocation: incidentLocation.trim(),
 					need: need.trim(),
@@ -593,12 +594,13 @@
 				if (isHandoffOpen(handoff.status) && stage === 'review') stage = 'chat';
 			}
 			if (payload.messages?.length) await mergeHandoffMessages(payload.messages);
-			if (stage === 'chat' && payload.collectedFields) {
+			if (stage === 'chat' && payload.collectedFields && !busy) {
 				const fields = payload.collectedFields;
+				const before = [incidentTime, incidentLocation, need].join('\n');
 				if (fields.incidentTime && (!incidentTime || isUnknownAnswer(incidentTime))) incidentTime = fields.incidentTime;
 				if (fields.incidentLocation && (!incidentLocation || isUnknownAnswer(incidentLocation))) incidentLocation = fields.incidentLocation;
 				if (fields.need && (!need || isUnknownAnswer(need))) need = fields.need;
-				if (!handoffOpen && chatStep !== 'story') {
+				if (!handoffOpen && chatStep !== 'story' && before !== [incidentTime, incidentLocation, need].join('\n')) {
 					chatStep = !incidentTime ? 'time' : !incidentLocation ? 'location' : !need ? 'need' : 'open';
 				}
 			}
@@ -681,7 +683,12 @@
 			serviceMode === 'unavailable'
 				? 'Halo. Petugas tidak tersedia, jadi kita susun draf bersama. Ceritakan yang ingin Anda sampaikan dengan kata-kata sendiri; saya akan menanyakan satu bagian pelengkap setiap giliran.'
 				: 'Ceritakan apa yang terjadi, sejauh yang nyaman Anda sampaikan. Saya membantu melengkapi waktu, lokasi umum, dan kebutuhan. Bagian yang belum diketahui boleh dilewati.';
-		await addMessage('assistant', intro, 'guide');
+		const relationIntro = relation === 'Keluarga atau pendamping'
+			? 'Anda melapor untuk orang yang Anda dampingi. Ceritakan yang Anda ketahui; tidak perlu memintanya mengulang pengalaman yang belum nyaman disampaikan. '
+			: relation === 'Pihak lain yang mengetahui kejadian'
+				? 'Ceritakan sebatas yang Anda lihat atau ketahui tentang kejadian tersebut. Tidak perlu menebak keterangan atau perasaan korban. '
+				: '';
+		await addMessage('assistant', relationIntro + intro, 'guide');
 		await focusComposer();
 	}
 

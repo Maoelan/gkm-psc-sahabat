@@ -1,8 +1,88 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { directAnswerFields, extractQuotedFields, isOutsideProjectRequest, makeChatTurn } from './ai';
+import { directAnswerFields, extractQuotedFields, isOutsideProjectRequest, makeChatTurn, narrativeFields } from './ai';
+import { REPORTER_RELATIONS } from '../chat';
 
 const empty = { incidentTime: '', incidentLocation: '', need: '' };
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
+describe('konteks lintas giliran dan peran pelapor', () => {
+    const first = 'Saya mengalami kekerasan dirumah';
+    const detail = 'Kejadian itu terjadi hari ini, kekerasan dilakukan paman saya, jadi saya baru pulang sekolah, setelah dirumah paman saya tiba-tiba memuluk kepala saya menggunakan gagang sapu dan beberapa kali menendang saya, katanya gara-gara saya lupa mencuci piring tadi pagi, tapi demi tuhan saya sudah mencuci piring tadi pagi sebelum berangkat sekolah';
+    it.each(['disabled', 'timeout', 'invalid_json', 'empty_extraction'])('tidak mengulang lokasi yang sudah ada di cerita saat %s', async mode => {
+        vi.stubEnv('AI_ENABLED', mode === 'disabled' ? 'false' : 'true');
+        vi.stubEnv('NVIDIA_API_KEY', 'test-key');
+        vi.stubGlobal('fetch', vi.fn(async () => {
+            if (mode === 'timeout') throw new DOMException('timeout', 'TimeoutError');
+            return Response.json({ choices: [{ message: { content: mode === 'invalid_json' ? '{broken' : JSON.stringify({ scope: 'reporting', reply: 'Saya mendengar cerita Anda tentang kekerasan yang dilakukan paman. Itu bukan kesalahan Anda, dan Anda boleh menyampaikan cerita sebatas yang nyaman.', extracted_fields: {}, next_field: 'incident_location', question: 'Di mana kejadian itu berlangsung?' }) } }] });
+        }));
+        const firstTurn = await makeChatTurn({ fields: empty, story: first, lastAnswer: first, relation: 'Diri sendiri' });
+        expect(firstTurn.fields?.incidentLocation).toBe('dirumah');
+        expect(firstTurn.missingField).toBe('incident_time');
+        const next = await makeChatTurn({ fields: firstTurn.fields!, story: first + '\n' + detail, lastAnswer: detail, answerField: 'incidentTime', relation: 'Diri sendiri' });
+        expect(next.fields?.incidentTime).toBe('hari ini');
+        expect(next.fields?.incidentLocation).toBe('dirumah');
+        expect(next.missingField).toBe('need');
+        expect(next.question).not.toMatch(/di mana/i);
+        expect(next.fields?.incidentTime).not.toBe('Belum diketahui');
+    });
+    it('mencatat semua bagian sekaligus tanpa menanyakan ulang', async () => {
+        vi.stubEnv('AI_ENABLED', 'false');
+        const story = 'Saya dipukul kemarin sore di rumah. Saya ingin pendampingan.';
+        const turn = await makeChatTurn({ fields: empty, story, lastAnswer: story });
+        expect(turn.fields).toEqual({ incidentTime: 'kemarin sore', incidentLocation: 'di rumah', need: 'Saya ingin pendampingan.' });
+        expect(turn.flowComplete).toBe(true);
+        expect(turn.question).toBeNull();
+    });
+    it.each([
+        'Sekarang saya di rumah saudara karena dipukul.',
+        'Saya takut pulang malam.',
+        'Kekerasan itu bukan di rumah.',
+        'Saya ingin pulang ke rumah.',
+        'Apakah kejadian di rumah bisa dilaporkan?'
+    ])('tidak menebak lokasi dari konteks yang salah: %s', story => {
+        expect(narrativeFields(empty, story).incidentLocation).toBe('');
+    });
+    it('mempertahankan bagian yang dilewati dan nilai yang sudah dicatat', () => {
+        expect(narrativeFields({ ...empty, incidentTime: 'Belum diketahui', incidentLocation: 'sekolah' }, 'Saya dipukul kemarin di rumah.')).toEqual({ ...empty, incidentTime: 'Belum diketahui', incidentLocation: 'sekolah' });
+    });
+    it('menerima koreksi eksplisit tanpa menghapus keterangan lain', async () => {
+        vi.stubEnv('AI_ENABLED', 'false');
+        const turn = await makeChatTurn({ fields: { incidentTime: 'kemarin', incidentLocation: 'di rumah', need: 'pendampingan' }, story: 'Saya dipukul kemarin di rumah. Ralat, kejadiannya hari ini di sekolah.', lastAnswer: 'Ralat, kejadiannya hari ini di sekolah.' });
+        expect(turn.fields).toEqual({ incidentTime: 'hari ini', incidentLocation: 'di sekolah', need: 'pendampingan' });
+        expect(turn.question).toBeNull();
+    });
+    it.each(['Saya takut', 'Saya lupa mencuci piring tadi pagi', 'Sekarang saya di rumah saudara'])('tidak menganggap cerita lain sebagai jawaban waktu: %s', answer => {
+        expect(directAnswerFields(empty, answer, 'incidentTime')).toEqual(empty);
+    });
+    it('mode panduan memakai pemahaman cerita tanpa menghubungi penyedia', async () => {
+        vi.stubEnv('AI_ENABLED', 'true'); vi.stubEnv('NVIDIA_API_KEY', 'test-key');
+        const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+        const turn = await makeChatTurn({ fields: empty, story: 'Saya dipukul kemarin di rumah.', structuredOnly: true });
+        expect(fetch).not.toHaveBeenCalled();
+        expect(turn.missingField).toBe('need');
+    });
+    it.each(REPORTER_RELATIONS)('meneruskan peran ke model: %s', async relation => {
+        vi.stubEnv('AI_ENABLED', 'true'); vi.stubEnv('NVIDIA_API_KEY', 'test-key');
+        const fetch = vi.fn(async (..._args: any[]) => Response.json({ choices: [{ message: { content: JSON.stringify({ scope: 'reporting', reply: 'Saya mendengar keterangan tentang kejadian itu. Anda boleh menyampaikan bagian yang diketahui, dan melewati yang belum jelas.', extracted_fields: {}, next_field: 'need', question: 'Bantuan apa yang ingin diajukan?' }) } }] }));
+        vi.stubGlobal('fetch', fetch);
+        await makeChatTurn({ fields: { ...empty, incidentTime: 'kemarin', incidentLocation: 'rumah' }, story: 'Cerita kekerasan untuk pengujian.', relation });
+        expect(JSON.parse(fetch.mock.calls[0][1].body).messages[1].content).toContain(relation);
+    });
+    it.each(REPORTER_RELATIONS.slice(1))('tidak menyebut pelapor sebagai korban pada fallback: %s', async relation => {
+        vi.stubEnv('AI_ENABLED', 'false');
+        const turn = await makeChatTurn({ fields: { ...empty, incidentTime: 'kemarin', incidentLocation: 'rumah' }, story: 'Anak tetangga mengalami kekerasan.', lastAnswer: 'Anak tetangga mengalami kekerasan.', relation });
+        expect(turn.reply).not.toContain('Anda mengalami');
+        expect(turn.question).toMatch(/korban|orang yang mengalami/);
+    });
+    it('menghapus pertanyaan yang bocor ke reply agar pertanyaan dan pilihan tetap sama', async () => {
+        vi.stubEnv('AI_ENABLED', 'true'); vi.stubEnv('NVIDIA_API_KEY', 'test-key');
+        vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { content: JSON.stringify({ scope: 'reporting', reply: 'Saya mendengar cerita kekerasan yang Anda alami. Anda boleh menyampaikan cerita dengan perlahan dan melewati bagian yang belum nyaman. Di mana kejadian itu berlangsung?', extracted_fields: {}, next_field: 'incident_location', question: 'Di mana kejadian itu berlangsung?' }) } }] })));
+        const turn = await makeChatTurn({ fields: empty, story: 'Saya dipukul kemarin di rumah.' });
+        expect(turn.missingField).toBe('need');
+        expect(turn.message).not.toContain('Di mana');
+        expect(turn.message.match(/\?/g)).toHaveLength(1);
+    });
+});
 
 describe('pemahaman keterangan', () => {
 	it('mempertahankan jawaban layanan yang aman saat pertanyaan model harus diganti', async () => {
@@ -48,7 +128,7 @@ describe('pemahaman keterangan', () => {
 		vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { content: JSON.stringify({ scope: 'reporting', reply: 'Keterangan sudah dicatat.', extracted_fields: { incidentTime: 'kemarin', incidentLocation: 'di rumah', need: 'pendampingan' }, next_field: null, question: null }) } }] })));
 		const result = await makeChatTurn({ fields: empty, story: 'Kejadian kemarin di rumah. Saya ingin pendampingan.' });
 		expect(result.flowComplete).toBe(true);
-		expect(result.fields).toEqual({ incidentTime: 'kemarin', incidentLocation: 'di rumah', need: 'pendampingan' });
+		expect(result.fields).toEqual({ incidentTime: 'kemarin', incidentLocation: 'di rumah', need: 'Saya ingin pendampingan.' });
 		expect(result.source).toBe('nvidia');
 	});
 	it('memakai fallback saat provider gagal dan tetap membatasi isian field', async () => {
@@ -176,6 +256,6 @@ it('does not use the current refuge as the incident location when the provider t
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
     const answer = 'Kejadiannya di rumah. Sekarang saya mengungsi di rumah saudara dan saya takut disakiti lagi.';
     const result = await makeChatTurn({ fields: { ...empty, incidentTime: 'tadi siang' }, story: answer, lastAnswer: answer, answerField: 'incidentLocation' });
-    expect(result.fields?.incidentLocation).toBe('Kejadiannya di rumah.');
+    expect(result.fields?.incidentLocation).toBe('di rumah');
     expect(result.fields?.incidentLocation).not.toContain('rumah saudara');
 });

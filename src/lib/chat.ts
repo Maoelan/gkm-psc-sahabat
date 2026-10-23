@@ -3,6 +3,8 @@ export const MESSAGE_LIMIT = 2000;
 export const FIELD_LIMITS = { incidentTime: 160, incidentLocation: 200, need: 300 };
 export type ChatFields = { incidentTime: string; incidentLocation: string; need: string };
 export type AnswerField = keyof ChatFields;
+export const REPORTER_RELATIONS = ['Diri sendiri', 'Keluarga atau pendamping', 'Pihak lain yang mengetahui kejadian'] as const;
+export type ReporterRelation = typeof REPORTER_RELATIONS[number];
 
 // Questions about the service stay in the transcript, not in the account of the incident.
 export function isServiceQuestion(value: string) {

@@ -1,5 +1,5 @@
 import { FIELD_LIMITS, STORY_LIMIT, isServiceQuestion, isUnknownAnswer, type AnswerField } from '../chat';
-import type { ChatFields } from '../chat';
+import type { ChatFields, ReporterRelation } from '../chat';
 export type { ChatFields } from '../chat';
 import { env, isAiEnabled } from './env';
 
@@ -95,6 +95,7 @@ CARA MENEMANI
 - Bila pertanyaan hanya tentang layanan, jawab langsung dengan hangat dan sesuai fakta. Jangan memberi janji bahwa petugas pasti menghubungi, pasti menyelesaikan masalah, atau merespons pada waktu tertentu. Memilih bersedia dihubungi hanya memberi izin kontak, bukan jaminan pendampingan.
 - Jika pesan terakhir hanya "kemarin sore" atau lokasi singkat, tanggapan singkat atau reply kosong cukup. Jangan mengulang rasa prihatin atas cerita lama setiap giliran.
 - Gunakan "saya" untuk AI, "Anda" untuk pelapor, "petugas" untuk manusia. Jangan berpura-pura menjadi petugas atau menyatakan telah mengirim laporan sebelum pelapor mengonfirmasinya.
+- Perhatikan reporter_relation. Untuk Diri sendiri, bicaralah kepada orang yang mengalami kejadian. Untuk Keluarga atau pendamping, akui bahwa ia melaporkan atau mendampingi orang lain; tanyakan kebutuhan korban/pendamping, jangan mengatakan pelapor yang dipukul atau bahwa kesalahan itu miliknya. Untuk Pihak lain yang mengetahui kejadian, gunakan hanya yang ia lihat/ketahui, jangan menganggap ia korban atau mengetahui perasaan korban. Jika hubungan belum diketahui, gunakan bahasa netral dan jangan menebaknya.
 - Dukungan emosional diperbolehkan. Diagnosis, nasihat hukum, keputusan kasus, atau janji keselamatan tidak diperbolehkan. Bila bahaya masih berlangsung, ingatkan singkat bahwa aplikasi bukan layanan darurat dan bantuan segera dapat dicari melalui layanan darurat atau orang tepercaya.
 - Jangan meminta nama, NIK, nomor kontak, atau alamat lengkap di chat. Nama sudah diisi sebelum chat; NIK dan data lainnya tersedia di formulir setelah chat. Jangan menyisipkan penjelasan akses NIK yang tidak ditanyakan.
 
@@ -117,7 +118,9 @@ function fieldValue(fields: ChatFields, field: MissingField) {
 	return fields.need;
 }
 
-export function fallbackFollowUp(missingField: MissingField) {
+export function fallbackFollowUp(missingField: MissingField, relation?: ReporterRelation) {
+	if (missingField === 'need' && relation === 'Keluarga atau pendamping') return 'Bantuan atau dukungan apa yang dibutuhkan korban atau Anda sebagai pendamping?';
+	if (missingField === 'need' && relation === 'Pihak lain yang mengetahui kejadian') return 'Bantuan apa yang ingin Anda ajukan bagi orang yang mengalami kejadian ini, sejauh yang Anda ketahui?';
 	return fieldRules[missingField].fallback;
 }
 
@@ -202,10 +205,10 @@ function joinMessage(reply: string, question: string | null) {
 	return [reply.trim(), question?.trim()].filter(Boolean).join(' ');
 }
 
-export function fallbackChatTurn(remainingFields: MissingField[]): ChatTurnResult {
+export function fallbackChatTurn(remainingFields: MissingField[], relation?: ReporterRelation): ChatTurnResult {
 	if (remainingFields.length > 0) {
 		const missingField = remainingFields[0];
-		const question = fallbackFollowUp(missingField);
+		const question = fallbackFollowUp(missingField, relation);
 		return {
 			message: question,
 			reply: '',
@@ -231,6 +234,8 @@ export type ChatTurnInput = {
 	lastAnswer?: string;
 	history?: ChatHistoryMessage[];
 	answerField?: AnswerField;
+	relation?: ReporterRelation;
+	structuredOnly?: boolean;
 };
 
 type ParsedAiTurn = {
@@ -279,7 +284,7 @@ export function extractQuotedFields(fields: ChatFields, extracted: unknown, evid
 
 export function directAnswerFields(fields: ChatFields, answer: string, key?: AnswerField): ChatFields {
 	if (!key || fields[key] || !answer || isServiceQuestion(answer) || answer.includes('?')) return { ...fields };
-	if (isUnknownAnswer(answer)) return { ...fields, [key]: 'Belum diketahui' };
+	if (isSkippedAnswer(answer)) return { ...fields, [key]: 'Belum diketahui' };
     // Keep the current refuge out of incident fields when a response contains both.
     let quote = answer;
     const sentences = answer.split(/(?<=[.!?])\s+|\n+/);
@@ -287,13 +292,18 @@ export function directAnswerFields(fields: ChatFields, answer: string, key?: Ans
         quote = sentences.find(sentence => !/\b(?:sekarang|saat ini|takut pulang|ingin pulang)\b/i.test(sentence) &&
             (key === 'incidentLocation' ? /\bdi\s*\w+/i.test(sentence) : /\b(?:tadi|kemarin|hari|tanggal|jam|pukul|minggu|bulan)\b/i.test(sentence))) ?? '';
     }
-    if (!quote || quote.length > FIELD_LIMITS[key]) return { ...fields };
+    const direct = key === 'incidentTime'
+        ? /^(?:(?:ini|itu|kejadian(?:nya)?|hal tersebut)\s+)?(?:(?:terjadi|berlangsung)\s+)?(?:tadi|kemarin|hari|pada|tanggal|sekitar|jam|pukul|minggu|bulan|\d{1,4}[./-])\b/i.test(quote.trim())
+        : key === 'incidentLocation'
+            ? /^(?:(?:ini|itu|kejadian(?:nya)?|hal tersebut)\s+)?(?:(?:terjadi|berlangsung)\s+)?(?:di\s*\w+|rumah|sekolah|kantor|tempat kerja|desa|dusun)\b/i.test(quote.trim())
+            : /\b(?:pendampingan|bantuan|dukungan|perlindungan|pemeriksaan|kesehatan|informasi hukum|ditangani|menangani|dibantu)\b/i.test(quote);
+    if (!quote || quote.length > FIELD_LIMITS[key] || !direct && quote !== 'Tercantum dalam cerita' || /\b(?:sekarang|saat ini|takut pulang|ingin pulang)\b/i.test(quote) && key !== 'need') return { ...fields };
     return { ...fields, [key]: quote };
 }
 
 export function explicitAnswerFields(fields: ChatFields, answer: string, key?: AnswerField): ChatFields {
 	if (!key || fields[key] || isServiceQuestion(answer) || answer.includes('?')) return { ...fields };
-	if (isUnknownAnswer(answer)) return { ...fields, [key]: 'Belum diketahui' };
+	if (isSkippedAnswer(answer)) return { ...fields, [key]: 'Belum diketahui' };
 	const explicit = key === 'need'
 		? /\b(?:butuh|perlu|ingin|minta|harap|mau)\b.*\b(?:pendampingan|bantuan|dukungan|perlindungan|ditangani|menangani|dibantu)\b/i.test(answer) || /^(?:pendampingan(?: petugas)?|perlindungan|dukungan)(?:[.!])?$/i.test(answer.trim())
 		: key === 'incidentTime'
@@ -302,16 +312,41 @@ export function explicitAnswerFields(fields: ChatFields, answer: string, key?: A
 	return explicit ? directAnswerFields(fields, answer, key) : { ...fields };
 }
 
-function serviceQuestionReply(answer: string) {
+function isSkippedAnswer(answer: string) {
+	return /^(?:(?:saya|aku|kami)\s+)?(?:(?:belum|tidak|gak|nggak|ga)\s+(?:(?:begitu|terlalu)\s+)?(?:tahu|tau|ingat|yakin)|lupa|belum diketahui)(?:\s+(?:kapan|waktunya|lokasinya|tempatnya|di mana|bantuan yang (?:saya|aku) (?:butuhkan|perlukan)))?[.!\s]*$/i.test(answer.trim());
+}
+
+// Conservative evidence recovery also works when the provider is unavailable.
+// Ambiguous places, current refuge and negated facts remain for clarification.
+export function narrativeFields(fields: ChatFields, story: string): ChatFields {
+	let result = { ...fields };
+	for (const clause of story.split(/(?<=[.!?])\s+|\n+|,\s*/)) {
+		if (isServiceQuestion(clause) || clause.includes('?') || /\b(?:sekarang|saat ini|takut pulang|ingin pulang|bukan|tidak terjadi|belum tahu|tidak tahu|lupa kapan)\b/i.test(clause)) continue;
+		const incident = /\b(?:kejadian|kejadiannya|terjadi|berlangsung|kekerasan|kdrt|dipukul|memukul|memuluk|menendang|ditendang|diancam|dilecehkan)\b/i.test(clause);
+		const time = clause.match(/\b(?:hari ini|kemarin(?:\s+(?:pagi|siang|sore|malam))?|tadi\s+(?:pagi|siang|sore|malam)|(?:minggu|bulan) lalu|(?:tanggal|pukul|jam)\s+\d[\d./:\-]*(?:\s+\w+)?)(?!\w)/i)?.[0];
+		const location = clause.match(/\bdi\s*(?:rumah|sekolah|kantor|jalan|pasar|tempat kerja|desa|dusun)\b(?:\s+(?:saya|kami|korban|teman|saudara|paman|nenek))?/i)?.[0];
+		if (!result.incidentTime && incident && time && time.length <= FIELD_LIMITS.incidentTime) result.incidentTime = time;
+		if (!result.incidentLocation && incident && location && !/\b(?:ke|menuju|pulang|kabur|mengungsi)\s*$/i.test(clause.slice(0, clause.indexOf(location)))) result.incidentLocation = location;
+		result = explicitAnswerFields(result, clause.trim(), 'need');
+	}
+	return result;
+}
+
+function serviceQuestionReply(answer: string, relation?: ReporterRelation) {
     if (!isServiceQuestion(answer)) return '';
-    if (/petugas|bantu|pendamping/i.test(answer)) return 'Kebutuhan Anda untuk didampingi bisa disampaikan kepada petugas melalui laporan ini. Setelah Anda mengirimnya, petugas akan meninjau cerita dan kebutuhan Anda untuk menentukan tindak lanjut; saya belum bisa memastikan hasil atau waktu responsnya.';
+    if (/petugas|bantu|pendamping/i.test(answer)) return (relation && relation !== 'Diri sendiri' ? 'Kebutuhan pendampingan korban bisa disampaikan kepada petugas melalui laporan ini. ' : 'Kebutuhan Anda untuk didampingi bisa disampaikan kepada petugas melalui laporan ini. ') + 'Setelah Anda mengirimnya, petugas akan meninjau cerita dan kebutuhan yang disampaikan untuk menentukan tindak lanjut; saya belum bisa memastikan hasil atau waktu responsnya.';
     if (/siapa.*(?:baca|lihat|akses)/i.test(answer)) return 'Laporan dapat dibaca petugas yang ditugaskan dan admin untuk pemeriksaan serta tindak lanjut.';
     return '';
 }
 
-function supportiveReply(answer: string) {
-	const serviceReply = serviceQuestionReply(answer);
+function supportiveReply(answer: string, relation?: ReporterRelation) {
+	const serviceReply = serviceQuestionReply(answer, relation);
     if (serviceReply) return serviceReply;
+	if (answer.length < 80 && !/kekerasan|kdrt|pukul|memukul|memuluk|tendang|disakiti|ancam|takut|khawatir|cemas|pendamping|bantuan|perlindungan/i.test(answer)) return '';
+	if (relation && relation !== 'Diri sendiri') {
+		if (relation === 'Keluarga atau pendamping') return 'Saya turut prihatin atas kejadian yang Anda ceritakan tentang orang yang Anda dampingi. Anda boleh menyampaikan yang diketahui tanpa perlu memintanya mengulang cerita. Saya bantu menyusun keterangan dan kebutuhan pendampingan untuk ditinjau petugas.';
+		return 'Kejadian yang Anda ketahui ini perlu didengarkan. Ceritakan sebatas yang Anda lihat atau ketahui; bagian yang belum jelas boleh dilewati. Saya bantu menyusun keterangan itu untuk ditinjau petugas.';
+	}
 	if (/\b(?:takut|khawatir|cemas)\b/i.test(answer)) {
 		if (/pendampingan|ditemani/i.test(answer)) return 'Anda ingin didampingi karena takut menghadapi keadaan ini sendirian. Saya bantu menuliskan kebutuhan itu agar petugas dapat membacanya setelah laporan dikirim.';
 		if (/rumah saudara/i.test(answer)) return 'Anda sudah pergi ke rumah saudara dan masih merasa takut disakiti lagi. Saya tidak akan meminta Anda mengulang rincian yang belum nyaman diceritakan.';
@@ -341,17 +376,23 @@ export async function makeChatTurn(input: ChatTurnInput): Promise<ChatTurnResult
 	const { story, lastAnswer = '', history = [] } = input;
     if (isOutsideProjectRequest(lastAnswer)) return projectBoundaryTurn(input.fields);
 	let fields = explicitAnswerFields(input.fields, lastAnswer, input.answerField);
-	if (!isUnknownAnswer(lastAnswer)) fields = explicitAnswerFields(fields, lastAnswer, "need");
+	fields = narrativeFields(fields, story);
+	const correction = lastAnswer.match(/^(?:maaf[,\s]+)?(?:ralat|koreksi|saya koreksi|maksud saya|sebenarnya)\b[,\s:]*(.+)/i);
+	if (correction) {
+		const corrected = narrativeFields({ incidentTime: '', incidentLocation: '', need: '' }, `Kejadian ${correction[1]}`);
+		for (const key of Object.keys(FIELD_LIMITS) as AnswerField[]) if (corrected[key]) fields[key] = corrected[key];
+	}
+	if (!isSkippedAnswer(lastAnswer)) fields = explicitAnswerFields(fields, lastAnswer, "need");
 	let remainingFields = remainingChatFields(fields);
 	let flowComplete = remainingFields.length === 0;
 	const fallback = (acceptDirectAnswer = true) => {
 		if (acceptDirectAnswer) fields = directAnswerFields(fields, lastAnswer, input.answerField);
-		const turn = fallbackChatTurn(remainingChatFields(fields));
-		const reply = supportiveReply(lastAnswer || story);
+		const turn = fallbackChatTurn(remainingChatFields(fields), input.relation);
+		const reply = correction ? 'Baik, keterangan yang Anda koreksi sudah diperbarui. Anda masih bisa memeriksa dan mengubahnya pada draf.' : supportiveReply(lastAnswer || story, input.relation);
 		return { ...turn, fields, ...(reply ? { reply, message: joinMessage(reply, turn.question) + (turn.flowComplete && remainingChatFields(input.fields).length ? ` ${FINISH_HINT}` : '') } : {}) };
 	};
 	const apiKey = env.NVIDIA_API_KEY;
-	if (!isAiEnabled() || !apiKey) {
+	if (input.structuredOnly || !isAiEnabled() || !apiKey) {
 		return fallback();
 	}
 
@@ -368,6 +409,7 @@ export async function makeChatTurn(input: ChatTurnInput): Promise<ChatTurnResult
 						content: JSON.stringify({
                             task: 'Utamakan last_answer: tentukan scope, jawab pertanyaan layanan atau tanggapi cerita/perasaannya. Jangan mengganti jawaban dengan status kelengkapan draf. Setelah itu pilih paling banyak satu pertanyaan hanya jika ada bagian kosong.',
                             message_type: isServiceQuestion(lastAnswer) ? 'question' : 'statement',
+							reporter_relation: input.relation ?? 'Belum diketahui',
 							flow_complete: flowComplete,
 							answer_field: input.answerField ?? null,
 							story: redactSensitive(story).slice(0, STORY_LIMIT),
@@ -419,23 +461,24 @@ export async function makeChatTurn(input: ChatTurnInput): Promise<ChatTurnResult
 		fields = extractQuotedFields(fields, parsed.extracted_fields, `${redactSensitive(story)}\n${redactSensitive(lastAnswer)}`);
 		fields = explicitAnswerFields(fields, lastAnswer, input.answerField);
 		if (!parsed.extracted_fields) fields = directAnswerFields(fields, lastAnswer, input.answerField);
-		if (input.answerField && isUnknownAnswer(lastAnswer) && !isServiceQuestion(lastAnswer)) fields[input.answerField] = 'Belum diketahui';
+		if (input.answerField && isSkippedAnswer(lastAnswer) && !isServiceQuestion(lastAnswer)) fields[input.answerField] = 'Belum diketahui';
 		remainingFields = remainingChatFields(fields);
 		flowComplete = remainingFields.length === 0;
 
-		const rawReply = typeof parsed.reply === 'string' ? redactSensitive(parsed.reply.trim()) : '';
+        const rawReply = typeof parsed.reply === 'string' ? redactSensitive(parsed.reply.trim()).split(/(?<=[.!?])\s+/).filter(sentence => !sentence.includes('?')).join(' ') : '';
 		const rawQuestion =
 			typeof parsed.question === 'string' ? redactSensitive(parsed.question.trim()) : '';
         const acknowledgementNeeded = /\b(?:kdrt|kekerasan|dipukul|memukul|memuluk|disakiti|diancam|takut|cemas|khawatir)\b/i.test(lastAnswer || story);
         const genericOnly = /^(?:saya (?:dengar|mendengar)(?: ceritanya)?|(?:sudah|telah) (?:saya )?catat|baik|terima kasih)[.!\s]*$/i.test(rawReply);
-        const replyWasAccepted = isSafeReply(rawReply) && !genericOnly && (!acknowledgementNeeded || rawReply.length >= 80);
-        let safeReply = replyWasAccepted ? rawReply : supportiveReply(lastAnswer || story);
-        if (isServiceQuestion(lastAnswer) && /^(?:sudah lengkap|bagian utama|cerita dan kebutuhan|anda bisa menekan|laporan sudah lengkap)/i.test(safeReply)) safeReply = serviceQuestionReply(lastAnswer) || 'Saya belum bisa memastikan jawaban untuk pertanyaan itu. Saya dapat membantu menjelaskan alur pelaporan dan menuliskan kebutuhan Anda untuk petugas.';
+        const wrongPerson = input.relation && input.relation !== 'Diri sendiri' && /\b(?:Anda (?:mengalami kekerasan|dipukul|disakiti|ditendang|menjadi korban)|kekerasan yang Anda alami|bukan kesalahan Anda)\b/i.test(rawReply);
+        const replyWasAccepted = isSafeReply(rawReply) && !genericOnly && !wrongPerson && (!acknowledgementNeeded || rawReply.length >= 80);
+        let safeReply = replyWasAccepted ? rawReply : supportiveReply(lastAnswer || story, input.relation);
+        if (isServiceQuestion(lastAnswer) && /^(?:sudah lengkap|bagian utama|cerita dan kebutuhan|anda bisa menekan|laporan sudah lengkap)/i.test(safeReply)) safeReply = serviceQuestionReply(lastAnswer, input.relation) || 'Saya belum bisa memastikan jawaban untuk pertanyaan itu. Saya dapat membantu menjelaskan alur pelaporan dan menuliskan kebutuhan Anda untuk petugas.';
         if (flowComplete && isServiceQuestion(lastAnswer) && !/selesai|draf|akhiri|lengkap/i.test(lastAnswer)) {
             safeReply = safeReply.split(/(?<=[.!?])\s+/).filter(sentence => !/sudah lengkap|bagian utama|menekan (?:tombol )?selesai|menambah cerita/i.test(sentence)).join(' ');
         }
         const priorReplies = history.filter(message => message.role === 'assistant').map(message => message.body);
-        if (priorReplies.some(previous => previous === safeReply)) safeReply = supportiveReply(lastAnswer || story);
+        if (priorReplies.some(previous => previous === safeReply)) safeReply = supportiveReply(lastAnswer || story, input.relation);
 
 		if (flowComplete) {
 			const optionalQuestion = isSafeOptionalQuestion(rawQuestion) && !fieldOrder.some((field) => isSafeQuestionForField(rawQuestion, field)) ? rawQuestion : null;
@@ -469,7 +512,7 @@ export async function makeChatTurn(input: ChatTurnInput): Promise<ChatTurnResult
 			return fallback(false);
 		}
 		const nextField = acceptedField ?? remainingFields[0];
-		const question = acceptedField ? rawQuestion : fallbackFollowUp(nextField);
+		const question = acceptedField ? rawQuestion : fallbackFollowUp(nextField, input.relation);
 
 		return {
 			message: joinMessage(safeReply, question),

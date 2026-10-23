@@ -1,4 +1,4 @@
-import { STORY_LIMIT, MESSAGE_LIMIT } from "../chat";
+import { STORY_LIMIT, MESSAGE_LIMIT, REPORTER_RELATIONS } from "../chat";
 import { z } from "zod";
 import { PRIVACY_NOTICE_VERSION } from "../privacy";
 import { hasContactNumber } from "../contact";
@@ -123,6 +123,7 @@ export const submitSchema = z.object({
 });
 
 export const chatTurnSchema = z.object({
+  relation: z.enum(REPORTER_RELATIONS).optional(),
   story: z
     .string()
     .trim()
