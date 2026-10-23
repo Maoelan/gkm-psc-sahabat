@@ -1,39 +1,63 @@
 <script lang="ts">
-	import { formatNik } from '../reports';
-	let { id, isAdmin, contactPreference }: { id: string; isAdmin: boolean; contactPreference: string } = $props();
-	let nik = $state(''), contact = $state(''), message = $state(''), busy = $state(false);
-	$effect(() => { if (id) { nik = ''; contact = ''; message = ''; } });
-	async function reveal(kind: 'nik' | 'contact') {
-		if (busy) return;
-		if (kind === 'nik' && nik) { nik = ''; return; }
-		if (kind === 'contact' && contact) { contact = ''; return; }
-		busy = true; message = '';
-		const requestedId = id;
-		try {
-			const r = await fetch(`/api/staff/reports/${encodeURIComponent(id)}/${kind}`); const p = await r.json();
-			if (id !== requestedId) return;
-			if (!r.ok) throw new Error(p.error || 'Data belum dapat dibuka.');
-			if (kind === 'nik') nik = p.nik || ''; else contact = p.contact || '';
-			message = p[kind] ? 'Akses dicatat dalam audit.' : 'Data tidak diisi atau tidak diizinkan untuk digunakan.';
-		} catch (e) { message = e instanceof Error ? e.message : 'Data belum dapat dibuka.'; }
-		finally { busy = false; }
-	}
+    import { formatNik } from '../reports';
+    let { id, isAdmin, contactPreference }: { id: string; isAdmin: boolean; contactPreference: string } = $props();
+    let nik = $state(''), contact = $state(''), message = $state(''), busy = $state(false);
+    async function load(kind: 'nik' | 'contact', reportId: string, signal?: AbortSignal) {
+        const response = await fetch(`/api/staff/reports/${encodeURIComponent(reportId)}/${kind}`, { signal });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Data belum dapat dimuat.');
+        return payload[kind] || '';
+    }
+    $effect(() => {
+        const reportId = id;
+        const admin = isAdmin;
+        const allowedContact = contactPreference === 'Aman dihubungi';
+        nik = ''; contact = ''; message = '';
+        const controller = new AbortController();
+        if (reportId && admin) {
+            busy = true;
+            void Promise.allSettled([
+                load('nik', reportId, controller.signal),
+                allowedContact ? load('contact', reportId, controller.signal) : Promise.resolve('')
+            ]).then((results) => {
+                if (controller.signal.aborted) return;
+                if (results[0].status === 'fulfilled') nik = results[0].value;
+                if (results[1].status === 'fulfilled') contact = results[1].value;
+                message = results.some(result => result.status === 'rejected')
+                    ? 'Sebagian data belum dapat dimuat. Buka kembali detail laporan untuk mencoba lagi.'
+                    : 'Akses identitas tercatat dalam audit.';
+                busy = false;
+            });
+        } else busy = false;
+        return () => controller.abort();
+    });
+    async function revealContact() {
+        if (busy) return;
+        busy = true; message = '';
+        const reportId = id;
+        try {
+            const value = await load('contact', reportId);
+            if (id === reportId) { contact = value; message = 'Akses kontak tercatat dalam audit.'; }
+        } catch (error) {
+            if (id === reportId) message = error instanceof Error ? error.message : 'Kontak belum dapat dimuat.';
+        } finally { if (id === reportId) busy = false; }
+    }
 </script>
-<details class="report-identity" aria-label="Identitas dan kontak pelapor"><summary>Identitas dan kontak pelapor</summary>
-	{#if isAdmin}<div><span>NIK korban</span><button type="button" class="link-button" onclick={() => reveal('nik')} disabled={busy}>{nik ? 'Sembunyikan NIK' : 'Tampilkan NIK'}</button>{#if nik}<p class="identity-value">{formatNik(nik)}</p>{/if}</div>{/if}
-	<div><span>Kontak milik pelapor · {contactPreference}</span>{#if contactPreference === 'Aman dihubungi'}<button type="button" class="link-button" onclick={() => reveal('contact')} disabled={busy}>{contact ? 'Sembunyikan kontak' : 'Lihat kontak pelapor'}</button>{/if}{#if contact}<p class="identity-value">{contact}</p>{/if}</div>
-	{#if message}<p role="status">{message}</p>{/if}
-</details>
-<style>.report-identity{margin:24px 0;padding:20px 0;border-block:1px solid var(--border)}
-summary {
-	font-size: 1rem;
-}
-span {
-	font-size: 0.85rem;
-	color: var(--muted);
-}.report-identity div{margin:12px 0}.link-button{margin-left:14px}.identity-value{white-space:pre-wrap;overflow-wrap:anywhere}
-p[role='status'] {
-	font-size: 0.85rem;
-	color: var(--muted);
-}
+<section class="report-identity" aria-label="Identitas dan kontak pelapor" aria-busy={busy}>
+    <h3>Identitas dan kontak pelapor</h3>
+    {#if isAdmin}<div><span>NIK korban</span><p class="identity-value">{busy ? 'Memuat…' : formatNik(nik)}</p></div>{/if}
+    <div><span>Kontak milik pelapor · {contactPreference}</span>
+        {#if isAdmin}<p class="identity-value">{busy ? 'Memuat…' : contact || (contactPreference === 'Aman dihubungi' ? 'Tidak diisi' : 'Tidak ada izin dihubungi')}</p>
+        {:else if contact}<p class="identity-value">{contact}</p>
+        {:else if contactPreference === 'Aman dihubungi'}<button type="button" class="link-button" onclick={revealContact} disabled={busy}>Lihat kontak pelapor</button>{/if}
+    </div>
+    {#if message}<p role="status">{message}</p>{/if}
+</section>
+<style>
+    .report-identity { margin: 24px 0; padding: 20px 0; border-block: 1px solid var(--border); }
+    h3 { font-size: 1rem; }
+    span, p[role='status'] { font-size: .85rem; color: var(--muted); }
+    .report-identity div { margin: 12px 0; }
+    .link-button { margin-left: 14px; }
+    .identity-value { white-space: pre-wrap; overflow-wrap: anywhere; }
 </style>

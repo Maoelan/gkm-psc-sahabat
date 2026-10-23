@@ -75,6 +75,7 @@ export default defineSchema({
     messageSeq: v.number(),
     draftVersion: v.number(),
     openHandoffId: v.optional(v.string()),
+    conversationEndedAt: v.optional(v.number()),
     reportId: v.optional(v.string()),
   })
     .index("by_uuid", ["id"])

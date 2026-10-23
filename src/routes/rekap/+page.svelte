@@ -5,9 +5,7 @@
  import ReportIdentity from '../../lib/components/ReportIdentity.svelte';
 	import {
 		decisionLabel,
-		formatNik,
 		formatReportDate,
-		maskNik,
 		type RecapReport
 	} from '../../lib/reports';
 	import type { PageProps } from './$types';
@@ -18,8 +16,6 @@
 	let filter = $state<Filter>('all');
 	let search = $state('');
 	let selectedId = $state('');
-	let fullNik = $state('');
-	let nikStatus = $state('');
 	let exportStatus = $state('');
 	let gateHeading = $state<HTMLElement>();
 	let dashboardHeading = $state<HTMLElement>();
@@ -50,8 +46,6 @@
 
 	function clearDetail() {
 		selectedId = '';
-		fullNik = '';
-		nikStatus = '';
 	}
 
 	async function lock() {
@@ -68,50 +62,19 @@
 
 	async function selectReport(report: RecapReport) {
 		selectedId = report.id;
-		fullNik = '';
-		nikStatus = '';
 		await tick();
 		detailHeading?.focus();
 	}
 
-	async function toggleNik() {
-		nikStatus = '';
-		if (fullNik) {
-			fullNik = '';
-			nikStatus = '';
-			return;
-		}
-		if (!selected?.nikLast4) {
-			nikStatus = 'NIK tidak diisi untuk laporan ini.';
-			return;
-		}
-		busy = true;
-		try {
-			const response = await fetch(
-				`/api/staff/reports/${encodeURIComponent(selected.id)}/nik`
-			);
-			const payload = (await response.json().catch(() => ({}))) as {
-				error?: string;
-				nik?: string | null;
-			};
-			if (!response.ok) throw new Error(payload.error || 'NIK tidak dapat dibuka.');
-			fullNik = payload.nik ?? '';
-			nikStatus = fullNik ? 'NIK dibuka. Akses tercatat dalam audit.' : 'NIK tidak diisi.';
-		} catch (error) {
-			nikStatus = error instanceof Error ? error.message : 'NIK tidak dapat dibuka.';
-		} finally {
-			busy = false;
-		}
-	}
 
 	function prepareExport() {
 		exportStatus =
-			'Menyiapkan file di server. File memuat sheet Rekap dan Identitas, termasuk NIK.';
+			'Menyiapkan file di server. Sheet Rekap memuat data lengkap laporan, termasuk NIK dan kontak yang diisi.';
 	}
 </script>
 
 <svelte:head>
-	<title>Rekap laporan | LAPOR AMAN</title>
+	<title>Rekap laporan | Lapor Aman - PSC</title>
 </svelte:head>
 
 <div class="recap-page" class:gate-view={!data.authenticated}>
@@ -141,7 +104,7 @@
 				<ul>
 					<li>Rekap status dan keputusan laporan.</li>
 					<li>NIK korban pada detail laporan, hanya untuk admin berwenang.</li>
-					<li>File .xlsx dengan sheet Rekap dan Identitas.</li>
+					<li>File .xlsx dengan tabel Rekap lengkap.</li>
 				</ul>
 				<p class="gate-side-note">
 					Data ditampilkan langsung dari database LAPOR AMAN dan hanya untuk petugas berwenang.
@@ -175,7 +138,7 @@
 				<p>
 					NIK lengkap dapat dibuka pada detail laporan di halaman ini. NIK dapat
 					ditampilkan per laporan di halaman ini dan setiap pembukaan dicatat. File .xlsx dibuat
-					server dan memuat NIK di sheet Identitas. Jangan menyimpan atau membagikan file di luar
+					server dan memuat NIK, kontak, serta kronologi di sheet Rekap. Jangan menyimpan atau membagikan file di luar
 					kebutuhan layanan.
 				</p>
 				{#if data.outbox}
@@ -253,7 +216,7 @@
 						<div>
 							<h2 id="table-title">Daftar laporan</h2>
 							<p>
-								Klik “Lihat detail” untuk membuka data korban. NIK dapat dibuka langsung pada detail laporan ini.
+								Klik “Lihat detail” untuk membuka data korban. NIK dan kontak yang diisi langsung terlihat pada detail laporan.
 							</p>
 						</div>
 						<span class="table-count">{filtered.length} laporan</span>
@@ -322,26 +285,6 @@
 						<div><dt>Lokasi umum</dt><dd>{selected.location}</dd></div>
 						<div><dt>Kebutuhan</dt><dd>{selected.need}</dd></div>
 						<div><dt>Preferensi kontak</dt><dd>{selected.contact}</dd></div>
-						<div class="nik-fact">
-							<dt>NIK korban</dt>
-							<dd>
-								<span class="nik-value"
-									>{fullNik ? formatNik(fullNik) : maskNik(selected.nikLast4)}</span
-								>
-								{#if selected.nikLast4}
-									<button
-										class="link-button nik-button"
-										type="button"
-										aria-pressed={Boolean(fullNik)}
-										onclick={toggleNik}
-										disabled={busy}
-									>
-										{fullNik ? 'Sembunyikan NIK' : 'Tampilkan NIK'}
-									</button>
-								{/if}
-								{#if nikStatus}<span class="nik-status" role="status">{nikStatus}</span>{/if}
-							</dd>
-						</div>
 						<div><dt>Keputusan</dt><dd>{decisionLabel(selected.decision)}</dd></div>
 					</dl>
 
@@ -352,7 +295,7 @@
 						</div>
 					{/if}
 
-					<ReportIdentity id={selected.id} isAdmin={false} contactPreference={selected.contact} />
+					<ReportIdentity id={selected.id} isAdmin={true} contactPreference={selected.contact} />
 <details class="report-management"><summary>Tindakan laporan</summary><DeleteReport id={selected.id} csrfToken={data.csrfToken ?? ''} /></details>
 <p class="detail-note">
 						Gunakan identitas hanya untuk kebutuhan tindak lanjut layanan. Jangan membagikannya kepada pihak yang tidak berwenang.
@@ -449,9 +392,6 @@
 	.detail-facts div { min-height: 78px; padding: 13px 14px; background: #fff; }
 	.detail-facts dt { color: var(--muted); font-size: 0.75rem; }
 	.detail-facts dd { margin: 5px 0 0; overflow-wrap: anywhere; }
-	.nik-value { display: inline-block; min-width: 15ch; font-variant-numeric: tabular-nums; letter-spacing: 0.06em; font-weight: 800; }
-	.nik-button { margin-left: 12px; min-height: 36px; font-size: 0.8rem; }
-	.nik-status { display: block; margin-top: 6px; color: var(--muted); font-size: 0.78rem; }
 	.reason-box { margin-top: 18px; padding: 14px 16px; border-left: 1px solid var(--navy); background: var(--surface); }
 	.reason-box strong { font-size: 0.84rem; }
 	.reason-box p { margin: 4px 0 0; color: var(--muted); }
@@ -503,7 +443,6 @@
 @media (max-width: 460px) {
 		.summary-grid { grid-template-columns: 1fr; }
 		.summary-card { min-height: 108px; }
-		.nik-button { display: block; margin: 8px 0 0; }
 }
 
 	.recap-toolbar { flex-wrap:wrap; align-items:end; gap:16px; }

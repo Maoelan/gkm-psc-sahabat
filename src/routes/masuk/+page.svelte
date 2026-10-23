@@ -9,7 +9,7 @@
 </script>
 
 <svelte:head>
-	<title>Masuk petugas | LAPOR AMAN</title>
+	<title>Masuk petugas | Lapor Aman - PSC</title>
 </svelte:head>
 
 <div class="login-page">

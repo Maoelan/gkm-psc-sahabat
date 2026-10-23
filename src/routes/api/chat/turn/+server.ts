@@ -32,6 +32,7 @@ export async function POST({ cookies, request, locals }) {
     );
   if (!hasValidCsrf(request, session))
     return json({ error: "Token keamanan sesi tidak cocok." }, { status: 403 });
+  if (session.conversationEndedAt) return json({ error: "Percakapan telah dihentikan admin. Periksa draf untuk melanjutkan laporan.", code: "conversation_ended" }, { status: 409 });
   if (!(await allowAttempt(`chat-turn:${session.id}`, 30, 10 * 60_000)))
     return json(
       { error: "Terlalu banyak permintaan. Coba lagi beberapa menit lagi." },

@@ -112,3 +112,7 @@ export async function openHandoff(ctx: QueryCtx, session: Doc<"sessions">) {
     .withIndex("by_uuid", (q) => q.eq("id", session.openHandoffId!))
     .unique();
 }
+
+export function requireOpenConversation(session: Doc<"sessions">) {
+  if (session.conversationEndedAt) fail(409, "conversation_ended", "Percakapan telah dihentikan admin. Anda tetap dapat memeriksa dan mengirim draf laporan.");
+}

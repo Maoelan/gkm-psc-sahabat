@@ -41,6 +41,7 @@ export const get = query({
           mode: s.mode,
           csrfToken: s.csrfToken,
           expiresAt: s.expiresAt,
+          conversationEndedAt: s.conversationEndedAt,
         }
       : null;
   },

@@ -63,6 +63,11 @@ export type RecapExportRow = {
   receivedAt: string;
   victimName: string;
   nik: string;
+  story: string;
+  incidentTime: string;
+  incidentLocation: string;
+  contactPreference: string;
+  decidedAt: string;
   relation: string;
   need: string;
   statusLabel: string;
@@ -93,7 +98,8 @@ function relativeReceived(value: number) {
   const days = Math.floor(hours / 24);
   return days === 1 ? "Kemarin" : `${days} hari lalu`;
 }
-function mapOfficer(row: ReportRow): OfficerReport {
+function mapOfficer(row: ReportRow, showSensitive = false): OfficerReport {
+  const display = showSensitive ? (value: string) => value : maskSensitiveText;
   const content = JSON.parse(
     unseal(row.content, "report_content"),
   ) as ReportContent;
@@ -108,14 +114,14 @@ function mapOfficer(row: ReportRow): OfficerReport {
     statusLabel: statusLabel(row.status),
     mode: row.mode,
     modeLabel: modeCopy(row.mode, isAiEnabled()).label,
-    need: maskSensitiveText(content.need || "Belum diketahui"),
-    story: maskSensitiveText(content.story),
-    time: maskSensitiveText(content.incidentTime || "Belum diketahui"),
-    location: maskSensitiveText(content.incidentLocation || "Belum diketahui"),
+    need: display(content.need || "Belum diketahui"),
+    story: display(content.story),
+    time: display(content.incidentTime || "Belum diketahui"),
+    location: display(content.incidentLocation || "Belum diketahui"),
     contact: row.safeContact ? "Aman dihubungi" : "Tidak aman dihubungi",
     decision: row.decision,
     reason: row.reason
-      ? maskSensitiveText(unseal(row.reason, "decision_reason"))
+      ? display(unseal(row.reason, "decision_reason"))
       : undefined,
     decidedAt: row.decidedAt
       ? new Date(row.decidedAt).toISOString()
@@ -129,7 +135,7 @@ function mapRecap(row: ReportRow): RecapReport {
     modeLabel: ___,
     story: ____,
     ...mapped
-  } = mapOfficer(row);
+  } = mapOfficer(row, true);
   return { ...mapped, nikLast4: row.nikLast4 ?? null };
 }
 export async function getOfficerReports(staff: StaffSession) {
@@ -138,7 +144,7 @@ export async function getOfficerReports(staff: StaffSession) {
       staffSessionId: staff.sessionId,
       view: "inbox",
     })
-  ).map(mapOfficer);
+  ).map(row => mapOfficer(row, staff.roles.includes("admin")));
 }
 export async function getOfficerReport(
   staff: StaffSession,
@@ -149,6 +155,7 @@ export async function getOfficerReport(
       staffSessionId: staff.sessionId,
       referenceCode,
     }),
+    staff.roles.includes("admin"),
   );
 }
 export async function getRecapReports(staff: StaffSession) {
@@ -174,7 +181,7 @@ export async function getReportTranscript(
       id: m.id,
       sender: m.sender,
       source: m.source,
-      body: maskSensitiveText(unseal(m.body, "chat_message")),
+      body: staff.roles.includes("admin") ? unseal(m.body, "chat_message") : maskSensitiveText(unseal(m.body, "chat_message")),
       createdAt: new Date(m.createdAt).toISOString(),
     })),
   };
@@ -302,7 +309,8 @@ export async function getRecapExportRows(
   requestId?: string | null,
 ): Promise<RecapExportRow[]> {
   return (await identities(staff, "recap.export", requestId)).map((row) => {
-    const r = mapRecap(row);
+    const r = mapOfficer(row, true);
+    const content = JSON.parse(unseal(row.content, "report_content")) as ReportContent;
     return {
       id: r.id,
       receivedAt: r.receivedAt,
@@ -313,8 +321,13 @@ export async function getRecapExportRows(
           ? unseal(row.contact, "contact_details")
           : "",
       nik: row.nik ? unseal(row.nik, "nik") : "",
+      story: content.story,
+      incidentTime: content.incidentTime === 'Belum diketahui' ? '' : content.incidentTime,
+      incidentLocation: content.incidentLocation === 'Belum diketahui' ? '' : content.incidentLocation,
+      contactPreference: r.contact,
+      decidedAt: r.decidedAt ?? '',
       relation: r.relation,
-      need: r.need,
+      need: content.need === "Belum diketahui" ? "" : content.need,
       statusLabel: r.statusLabel,
       decisionLabel: decisionLabel(r.decision),
       reason: r.reason ?? "",

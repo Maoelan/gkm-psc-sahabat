@@ -6,7 +6,7 @@
 </script>
 <dialog bind:this={dialog} aria-labelledby="intro-title" oncancel={(e) => { e.preventDefault(); dismiss(); }}>
 	<img src="/brand/psc-sahabat.svg" width="44" height="44" alt="" />
-	<h2 id="intro-title">Selamat datang di PSC SAHABAT</h2>
+	<h2 id="intro-title">Selamat datang di Lapor Aman - PSC</h2>
 	<p>Layanan pelaporan kekerasan terhadap perempuan dan anak untuk wilayah kerja <strong>UPT Puskesmas Suranadi</strong>.</p>
 	<p>Tulis kronologi, periksa draf, lalu konfirmasi untuk mengirim laporan ke petugas. Data korban boleh dilengkapi jika diketahui.</p>
 	<p>Pesan tersimpan saat dikirim dan cerita dapat diproses asisten AI NVIDIA.</p>

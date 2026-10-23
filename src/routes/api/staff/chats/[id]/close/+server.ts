@@ -16,8 +16,14 @@ export async function POST({ cookies, request, params, locals }) {
 		return json({ error: 'Terlalu banyak permintaan. Coba lagi nanti.' }, { status: 429 });
 	}
 
+    const body = await request.json().catch(() => ({}));
+    const parsed = z.object({ endConversation: z.boolean().optional(), confirmed: z.boolean().optional() }).safeParse(body);
+    if (!parsed.success) return json({ error: 'Permintaan tidak valid.' }, { status: 422 });
+    if (parsed.data.endConversation && (!staff.roles.includes('admin') || !parsed.data.confirmed)) {
+        return json({ error: 'Hanya admin dengan konfirmasi yang dapat menghentikan percakapan pelapor.' }, { status: staff.roles.includes('admin') ? 422 : 403 });
+    }
 	try {
-		return json(await closeStaffChat(staff, params.id, locals.requestId));
+		return json(await closeStaffChat(staff, params.id, locals.requestId, parsed.data.endConversation));
 	} catch (error) {
 		if (error instanceof HandoffServiceError) {
 			return json({ error: error.message, code: error.code }, { status: error.status });

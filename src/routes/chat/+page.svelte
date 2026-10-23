@@ -7,7 +7,7 @@
 	import { emptyVictimProfile } from '../../lib/victim';
 	import { modeCopy, SERVICE_HOURS_LABEL, type ServiceMode } from '../../lib/service-mode';
 	import { appendReportStory, isUnknownAnswer, STORY_LIMIT, MESSAGE_LIMIT, type AnswerField, type ChatFields } from '../../lib/chat';
-	import { isValidNik, maskNik, normalizeNik } from '../../lib/reports';
+	import { isValidNik, normalizeNik } from '../../lib/reports';
 	import {
 		handoffStatusCopy,
 		handoffStatusLabel,
@@ -71,6 +71,7 @@
 	let victimReviewDetails = $state<HTMLDetailsElement>();
 	let victimNik = $state('');
 	let chatToolsOpen = $state(false);
+    let conversationEnded = $state(false);
 	let story = $state('');
 	let incidentTime = $state('');
 	let incidentLocation = $state('');
@@ -100,7 +101,6 @@
 	let firstRelation = $state<HTMLInputElement>();
 	let nameReviewInput = $state<HTMLInputElement>();
 	let nikReviewInput = $state<HTMLInputElement>();
-	let nikEditing = $state(false);
 	let contactNo = $state<HTMLInputElement>();
 	let reviewButton = $state<HTMLButtonElement>();
 
@@ -135,7 +135,7 @@
 	);
 	const composerPlaceholder = $derived(
 		handoffOpen
-			? 'Tulis pesan untuk petugas. Jangan kirim NIK atau kontak lengkap di sini.'
+			? 'Tulis pesan untuk petugas.'
 			: addingStory
 				? 'Tambahkan bagian cerita yang belum sempat Anda tulis.'
 				: chatStep === 'story'
@@ -360,6 +360,7 @@
 				fields?: ChatFields;
 			};
 			if (!response.ok) {
+				if (payload.code === 'conversation_ended') { await pollHandoff(true); return; }
 				if (payload.code === 'handoff_open') {
 					if (payload.accepted) {
 						story = nextStory;
@@ -403,7 +404,7 @@
 	}
 
 	async function sendChatMessage(value: string, answerField?: AnswerField, initial = false) {
-		if (busy) return;
+		if (busy || conversationEnded) return;
 		const message = value.trim();
 		if (!message || message.length > MESSAGE_LIMIT) {
 			chatError = `Tulis pesan antara 1 dan ${MESSAGE_LIMIT} karakter.`;
@@ -578,6 +579,7 @@
 				handoff?: ReporterHandoff | null;
 				messages?: HandoffThreadMessage[];
 				collectedFields?: Partial<ChatFields>;
+                conversationEnded?: boolean;
 				latestMessageId?: string | null;
 			};
 			if (!response.ok) throw new Error(payload.error || 'Status bantuan belum dapat dimuat.');
@@ -598,6 +600,10 @@
 				}
 			}
 			if (payload.latestMessageId) lastHandoffMessageId = payload.latestMessageId;
+            if (payload.conversationEnded) {
+                conversationEnded = true;
+                if (stage === 'chat' && !busy) await openReview();
+            }
 		} catch {
 			// Polling berikutnya dicoba lagi; kesalahan sesi permanen ditangani di atas.
 		} finally {
@@ -737,7 +743,6 @@
 		incidentLocation = incidentLocation.trim() || 'Belum diketahui';
 		need = need.trim() || 'Belum diketahui';
 		addingStory = false;
-		nikEditing = false;
 		submitError = '';
 		idempotencyKey ||= crypto.randomUUID();
 		stage = 'review';
@@ -746,17 +751,13 @@
 	}
 
 	async function backToChat() {
+        if (conversationEnded) return;
 		stage = 'chat';
 		await tick();
 		if (chatStep === 'open') reviewButton?.focus();
 		else composer?.focus();
 	}
 
-	async function editNik() {
-		nikEditing = true;
-		await tick();
-		nikReviewInput?.focus();
-	}
 
 	async function submitReport() {
 		if (busy) return;
@@ -779,7 +780,6 @@
 		const nik = normalizeNik(victimNik);
 		if (!isValidNik(nik)) {
 			submitError = 'NIK harus 16 digit angka. Kosongkan jika belum ingin mengisi.';
-			nikEditing = true;
 			if (victimReviewDetails) victimReviewDetails.open = true;
 			await tick();
 			nikReviewInput?.focus();
@@ -881,8 +881,8 @@
 		victimName = '';
 		victimProfile = emptyVictimProfile();
 		victimNik = '';
-		nikEditing = false;
 		story = '';
+        conversationEnded = false;
 		incidentTime = '';
 		incidentLocation = '';
 		need = '';
@@ -904,7 +904,7 @@
 </script>
 
 <svelte:head>
-	<title>Chat Pengaduan | LAPOR AMAN</title>
+	<title>Chat Pengaduan | Lapor Aman - PSC</title>
 </svelte:head>
 
 <div class="chat-page" class:chat-stage={stage === 'chat'} class:review-stage={stage === 'review'}>
@@ -939,7 +939,7 @@
 			<section class="start-card" aria-labelledby="start-title">
 				<h2 id="start-title">Sebelum mulai</h2>
 				<p class="start-intro">Tulis cerita, periksa, lalu kirim. Tidak perlu membuat akun.</p>
-				<p class="start-privacy">Pesan tersimpan saat dikirim. Cerita dapat diproses asisten AI NVIDIA; AI tidak menggantikan petugas. Hindari menulis NIK atau kontak di dalam cerita. <a href="/panduan#privasi" target="_blank" rel="noopener">Baca rincian privasi</a>.</p>
+				<p class="start-privacy">Pesan tersimpan saat dikirim. Cerita dapat diproses asisten AI NVIDIA; AI tidak menggantikan petugas. NIK dapat diisi pada kolom identitas; nomor kontak diisi saat memeriksa draf. <a href="/panduan#privasi" target="_blank" rel="noopener">Baca rincian privasi</a>.</p>
 
 				{#if safetyChoice !== 'unsafe'}
 					<div class="safety-question">
@@ -1012,7 +1012,7 @@
 			<section class="identity-card" aria-labelledby="identity-title">
 				<h2 id="identity-title" tabindex="-1" bind:this={identityHeading}>Anda melapor untuk siapa?</h2>
 				<p class="identity-lead">
-					Pilih hubungan Anda dengan korban. Nama dan data lainnya bisa dilengkapi setelah bercerita.
+					Pilih hubungan Anda dengan korban. Nama dan NIK boleh diisi sekarang; data lainnya bisa dilengkapi setelah bercerita.
 				</p>
 
 				<fieldset class="relation-field">
@@ -1050,6 +1050,11 @@
 					</div>
 				</fieldset>
 
+                <div class="review-grid">
+                    <label class="field">Nama korban atau nama panggilan (opsional)<input maxlength="80" autocomplete="off" bind:value={victimName} /></label>
+                    <label class="field">NIK korban (opsional)<input inputmode="numeric" maxlength="24" autocomplete="off" bind:value={victimNik} oninput={() => victimNik = normalizeNik(victimNik)} placeholder="16 digit, boleh dikosongkan" /></label>
+                </div>
+                <p class="field-help">Boleh diisi sekarang atau dilengkapi nanti. Data ini tidak dikirim ke AI.</p>
 				{#if identityError}<p class="form-error" role="alert">{identityError}</p>{/if}
 
 				<div class="identity-actions">
@@ -1062,7 +1067,7 @@
 		{/if}
 
 {#if stage === 'chat'}
-			<section class="chat-card chronology-chat" class:finished={chatStep === 'open' && !handoffOpen} aria-label="Percakapan pengaduan">
+			<section class="chat-card chronology-chat" class:collecting={isFieldStep && !handoffOpen} class:finished={chatStep === 'open' && !handoffOpen} aria-label="Percakapan pengaduan">
 				<header class="chat-card-bar">
 					<div>
 						<h2>Percakapan</h2>
@@ -1155,7 +1160,7 @@
 					{/if}
 
 					{#if !addingStory && isFieldStep && !handoffOpen}
-						<details class="quick-answers"><summary>Pilihan jawaban cepat</summary><div class="quick-replies" aria-label="Pilihan cepat">
+						<div class="quick-answers"><p class="field-help">Pilihan jawaban cepat</p><div class="quick-replies" aria-label="Pilihan cepat">
 							{#if chatStep === 'time'}
 								<button type="button" onclick={() => answerTime('Hari ini')}>Hari ini</button>
 								<button type="button" onclick={() => answerTime('Kemarin')}>Kemarin</button>
@@ -1192,7 +1197,7 @@
 									>Belum tahu</button
 								>
 							{/if}
-						</div></details>
+						</div></div>
 					{/if}
 
 					<form class="composer-form" onsubmit={handleComposerSubmit}>
@@ -1225,7 +1230,7 @@
 								{:else if chatStep === 'open'}
 									Tambahan cerita akan ikut masuk ke draf.
 								{:else}
-									Jangan tulis NIK atau nomor kontak di chat.
+									NIK bisa dilengkapi pada kolom identitas saat memeriksa draf.
 								{/if}
 							</p>
 							{#if isFieldStep && !handoffOpen}
@@ -1255,7 +1260,8 @@
 				<header class="review-header">
 					<div>
 						<h2 class="sr-only" id="review-title" tabindex="-1" bind:this={reviewHeading}>Periksa draf Anda</h2>
-                        <p>Perbaiki isi jika perlu. Laporan belum dikirim.</p>
+                        <p>{conversationEnded ? "Admin telah menghentikan percakapan. Anda tetap dapat memperbaiki draf dan mengirim laporan." : "Perbaiki isi jika perlu. Laporan belum dikirim."}</p>
+                        {#if conversationEnded && input.trim()}<label class="field">Pesan yang belum terkirim<textarea readonly value={input} rows="3"></textarea></label><p class="field-help">Pesan ini belum masuk ke cerita. Anda dapat menyalin bagian yang diperlukan ke Keterangan pelapor di bawah.</p>{/if}
                     </div>
 				</header>
 
@@ -1310,31 +1316,22 @@
 							/>
 						</label>
 						<div class="field field-wide">
-							{#if nikEditing}
+
 								<label for="review-nik">NIK korban (opsional)</label>
 								<input
 									bind:this={nikReviewInput}
 									id="review-nik"
 									inputmode="numeric"
-									maxlength="16"
+									maxlength="24"
 									autocomplete="off"
 									bind:value={victimNik}
 									oninput={() => (victimNik = normalizeNik(victimNik))}
 									placeholder="16 digit, boleh dikosongkan"
 									aria-describedby="review-nik-help"
 								/>
-							{:else}
-								<span class="field-label">NIK korban (opsional)</span>
-								<p class="nik-review-value">
-									<span class="num">{maskNik(victimNik)}</span>
-									<button class="link-button nik-edit-button" type="button" onclick={editNik}>
-										{victimNik ? 'Ubah NIK' : 'Isi NIK'}
-									</button>
-								</p>
-							{/if}
+
 							<p id="review-nik-help" class="field-help">
-								Hanya akun berwenang yang dapat membuka NIK untuk tindak lanjut. NIK tidak
-								ditampilkan di daftar meja petugas.
+								Admin dapat melihat NIK pada detail laporan untuk tindak lanjut. NIK tidak wajib diisi.
 							</p>
 						</div>
 						</div>
@@ -1437,7 +1434,7 @@
 						onclick={submitReport}
 						disabled={busy}>{busy ? 'Menyimpan...' : 'Konfirmasi dan kirim laporan'}</button
 					>
-					<button class="button-secondary" type="button" onclick={backToChat}>Kembali ke chat</button>
+					<button class="button-secondary" type="button" onclick={backToChat} disabled={conversationEnded}>Kembali ke chat</button>
 				</div>
 				<button class="link-button reset-button" type="button" onclick={reset}
 					>Mulai ulang dari awal</button
@@ -1891,23 +1888,6 @@
 	.review-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 	.review-grid .field { margin-top: 0; font-size: 0.86rem; font-weight: 800; }
 	.review-grid .field-wide { grid-column: 1 / -1; }
-	.field-label { font-size: 0.9rem; font-weight: 800; }
-	.nik-review-value {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-		gap: 6px 12px;
-		min-height: 48px;
-		margin: 0;
-		padding: 8px 13px;
-		border: 1px dashed #8da6ad;
-		border-radius: var(--radius-control);
-		background: var(--surface);
-		font-variant-numeric: tabular-nums;
-		letter-spacing: 0.04em;
-	}
-	.nik-edit-button { margin-left: auto; min-height: 36px; font-size: 0.82rem; }
 	.contact-section fieldset { margin: 0; padding: 0; border: 0; }
 	.contact-note {
 		margin: 12px 0 0;
@@ -2111,9 +2091,9 @@
 	border: 0;
 	margin-bottom: 8px;
 }
-.quick-answers summary {
+.quick-answers > p {
 	padding: 4px 0;
-	min-height: 44px;
+	margin-bottom: 8px;
 	font-size: 0.875rem;
 	color: var(--muted);
 }
@@ -2216,6 +2196,7 @@
 	color: var(--muted);
 }
 @media (max-width: 600px) {
+    .chronology-chat.collecting .message-log { height: clamp(200px, calc(100dvh - 610px), 340px); }
 	.quick-replies button {
 		min-height: 44px;
 	}

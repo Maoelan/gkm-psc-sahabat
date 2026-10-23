@@ -188,7 +188,7 @@
 </script>
 
 <svelte:head>
-	<title>Meja petugas | LAPOR AMAN</title>
+	<title>Meja petugas | Lapor Aman - PSC</title>
 </svelte:head>
 
 <div class="staff-page" class:detail-open={detailsOpen}>
@@ -277,6 +277,7 @@
 						<div><dt>Preferensi kontak</dt><dd>{selected.contact}</dd></div>
 					</dl>
 
+<ReportIdentity id={selected.id} isAdmin={data.isAdmin} contactPreference={selected.contact} />
 					{#if !decisionRecorded}
 						<details class="review-note-form"><summary>2. Tambahkan catatan pemeriksaan (bila perlu)</summary>
 
@@ -394,7 +395,7 @@
 						{/if}
 					</section>
 
-<ReportIdentity id={selected.id} isAdmin={data.isAdmin} contactPreference={selected.contact} />
+
 {#if data.isAdmin}<details class="report-management"><summary>Tindakan laporan</summary><DeleteReport id={selected.id} csrfToken={data.csrfToken} /></details>{/if}
 </article>
 				{/if}

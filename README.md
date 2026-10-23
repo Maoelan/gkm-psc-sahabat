@@ -1,4 +1,4 @@
-# PSC SAHABAT — LAPOR AMAN
+# Lapor Aman - PSC
 
 A reporting portal for women and children affected by violence in the service area of **UPT Puskesmas Suranadi**. PSC SAHABAT provides a coordinated reporting, assistance, and referral program. Its motto translates to **“One report, one companion, one pathway to protection.”**
 
@@ -40,7 +40,7 @@ The hosted website and database work independently of the developer's computer. 
 
 ### Reporting
 
-The phone-first flow starts with the reporter’s relationship to the victim, then goes directly to the incident narrative. Optional identity fields appear in a collapsed section during draft review. Victim details are encouraged when known and safe to provide. Available fields include name, date of birth, parent or guardian, address, gender, education, occupation, marital status, pregnancy, and national identification number (NIK). Reporters can select suspected violence categories and record whether another agency has already been involved. These selections support initial reporting and do not establish a legal finding.
+The phone-first flow asks for the reporter’s relationship to the victim. Victim name and NIK can be entered immediately or left blank; the full optional profile remains available during draft review. Quick answers are visible in the conversation without opening a disclosure. Victim details are encouraged when known and safe to provide. Available fields include name, date of birth, parent or guardian, address, gender, education, occupation, marital status, pregnancy, and national identification number (NIK). Reporters can select suspected violence categories and record whether another agency has already been involved. These selections support initial reporting and do not establish a legal finding.
 
 The six categories follow the supplied KTPA/TPPO training material: physical violence, psychological violence, sexual violence, neglect, human trafficking, and exploitation. The education page links to official references for domestic violence, trafficking, child protection, and sexual violence legislation. No unverified service contacts, village lists, or real victim records are supplied.
 
@@ -50,11 +50,11 @@ Contact permission is requested during final review. A reporter who agrees to co
 
 ### Staff and administrator actions
 
-Non-administrator staff can access assigned reports only. Administrators can access all reports. On phones, staff navigation stays at the bottom and only one inbox pane is shown at a time. The reply box precedes an on-demand assistance disclosure. Private assistance shows one suggested question at a time, with completeness details collapsed by default. A suggestion enters the reply box for editing and must be sent manually. Automatic AI replies pause during staff takeover.
+Non-administrator staff can access assigned reports only. Administrators can access all reports. On phones, staff navigation stays at the bottom and only one inbox pane is shown at a time. The reply box precedes an on-demand assistance disclosure. Private assistance shows one suggested question at a time, with completeness details collapsed by default. A suggestion enters the reply box for editing and must be sent manually. Automatic AI replies pause during staff takeover. On desktop, Enter sends a staff reply and Shift+Enter inserts a newline; IME composition is not submitted. Administrators can stop the reporter conversation after a confirmation dialog. The server then rejects further messages and takeovers for that session, while the reporter can still edit and submit the existing draft. Ending staff assistance alone continues to allow the reporter to chat.
 
-Collected facts must be grounded in actual reporter messages. Unknown answers remain distinguishable from missing information. Reporter review remains necessary before a draft becomes a submitted report.
+AI responses acknowledge the latest account before asking one missing detail. Explicit answers are retained even if model extraction misses them, and completed needs are not asked again. Collected facts must be grounded in actual reporter messages. Unknown answers remain distinguishable from missing information. Reporter review remains necessary before a draft becomes a submitted report.
 
-NIK and permitted contact details can be revealed through audited actions within a report. The Excel export has a summary worksheet named `Rekap` without NIK and a restricted worksheet named `Identitas` containing identity information and additional fields. Downloaded files remain outside application access controls.
+Administrators see the full NIK and permitted contact details automatically when opening a report detail. Server authorization and access audits still apply. Non-administrator staff retain assignment-based access and cannot read NIK. The Excel export contains one complete `Rekap` worksheet with victim and reporter details, NIK, contact permission and contact details, chronology, incident time and location, requested assistance, coordination, violence categories, status, and decision details. Optional values that were not supplied remain blank. Downloaded files remain outside application access controls.
 
 Administrators can permanently delete a report by entering its exact reference and a reason. One transaction removes the report, identity, reporter session, drafts, messages, handoffs, assistance, reviews, and outbox records. An audit entry with an encrypted deletion reason remains. Previously downloaded files are unaffected.
 
@@ -175,7 +175,7 @@ npm run security:scan -- --history --staged --client
 npm audit --audit-level=low
 ```
 
-The interface revision was verified on **22 October 2026** with 76 unit tests, 27 native Convex integration tests, type checks, Node and Vercel builds, secret scans, and a dependency audit reporting zero known vulnerabilities. Development and production browser flows cover widths from 320 to 1440 pixels, touch emulation, landscape layouts, and reduced viewport height while the composer remains focused. These are browser-emulation checks; physical Android and iOS device testing remains necessary before operational rollout. Hosted verification covered staff takeover, manual replies, confirmed submission, optional fields, identity access, export, notifications, and deletion of its own synthetic test report. A separate live NVIDIA check verified that the AI explains optional victim information correctly.
+The interface revision was verified on **23 October 2026** with 82 unit tests, 28 native Convex integration tests, type checks, Node and Vercel builds, secret scans, and a dependency audit reporting zero known vulnerabilities. Development and production browser flows cover widths from 320 to 1440 pixels, touch emulation, landscape layouts, and reduced viewport height while the composer remains focused. These are browser-emulation checks; physical Android and iOS device testing remains necessary before operational rollout. Hosted verification covered staff takeover, manual replies, confirmed submission, optional fields, identity access, export, notifications, and deletion of its own synthetic test report. A separate live NVIDIA check verified that the AI explains optional victim information correctly.
 
 These checks are a dated release snapshot, not a guarantee of permanent security. Rerun the appropriate checks after changes.
 

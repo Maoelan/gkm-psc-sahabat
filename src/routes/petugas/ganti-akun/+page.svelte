@@ -5,7 +5,7 @@
 </script>
 
 <svelte:head>
-	<title>Beralih ke rekap | LAPOR AMAN</title>
+	<title>Beralih ke rekap | Lapor Aman - PSC</title>
 </svelte:head>
 
 <div class="switch-page">

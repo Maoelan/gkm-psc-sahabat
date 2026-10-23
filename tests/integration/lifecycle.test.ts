@@ -777,3 +777,25 @@ describe("Convex lifecycle", () => {
     },
   );
 });
+
+
+describe("Admin stops reporter conversation", () => {
+  it("requires confirmation and admin, blocks late messages and AI, preserves draft submission", async () => {
+    const { session } = await reporter();
+    await userMessage(session.id);
+    const claimed = await handoffs.takeoverChatSession(staff, session.id);
+    const snap = await t.query(api.handoffs.staffSnapshot, { key: serverKey, staffSessionId: staff.sessionId, handoffId: claimed.handoff.id });
+    const args = { key: serverKey, staffSessionId: staff.sessionId, handoffId: claimed.handoff.id, revision: snap.session.messageSeq, content: seal({}, 'staff_assistance'), message: { id: randomUUID(), body: seal('Percakapan dihentikan admin.', 'chat_message') }, endConversation: true };
+    await expect(t.mutation(api.handoffs.finish, args)).rejects.toThrow('Konfirmasi');
+    await t.run(async ctx => { const row = await ctx.db.query('staff').withIndex('by_uuid', q => q.eq('id', staff.staffId)).unique(); await ctx.db.patch(row!._id, { roles: ['petugas'] }); });
+    await expect(t.mutation(api.handoffs.finish, { ...args, confirmed: true })).rejects.toThrow('Peran');
+    await t.run(async ctx => { const row = await ctx.db.query('staff').withIndex('by_uuid', q => q.eq('id', staff.staffId)).unique(); await ctx.db.patch(row!._id, { roles: ['admin', 'petugas'] }); });
+    await handoffs.closeStaffChat(staff, claimed.handoff.id, undefined, true);
+    expect((await handoffs.getReporterHandoff(session.id)).conversationEnded).toBe(true);
+    await expect(userMessage(session.id)).rejects.toThrow('dihentikan admin');
+    await expect(handoffs.takeoverChatSession(staff, session.id)).rejects.toThrow('dihentikan admin');
+    await expect(handoffs.sendReporterHandoffMessage(session, 'Pesan terlambat')).rejects.toThrow('dihentikan admin');
+    const draft = await reports.createDraft(session.id, content);
+    expect((await reports.submitReport(session, { ...draft, idempotencyKey: randomUUID() })).referenceCode).toMatch(/^LA-/);
+  });
+});

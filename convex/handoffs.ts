@@ -10,6 +10,7 @@ import {
   appendMessage,
   audit,
   fail,
+  requireOpenConversation,
   type QueryCtx,
 } from "./model";
 import { sealed } from "./schema";
@@ -147,7 +148,7 @@ export const active = query({
       .collect();
     const result = [];
     for (const s of sessions) {
-      if (s.expiresAt <= Date.now() || s.openHandoffId || s.reportId) continue;
+      if (s.expiresAt <= Date.now() || s.openHandoffId || s.reportId || s.conversationEndedAt) continue;
       const msgs = (await messages(ctx, s.id)).filter(
         (m) => m.sender === "user",
       );
@@ -171,6 +172,7 @@ export const request = mutation({
   handler: async (ctx, a) => {
     serverOnly(a.key);
     const s = await reporter(ctx, a.sessionId);
+    requireOpenConversation(s);
     if (s.reportId)
       fail(409, "report_already_submitted", "Laporan sudah dikirim.");
     const existing = await openHandoff(ctx, s);
@@ -227,6 +229,7 @@ export const claim = mutation({
         "Ambil alih percakapan hanya untuk admin.",
       );
     const s = await reporter(ctx, h?.sessionId ?? a.sessionId!);
+    requireOpenConversation(s);
     if (s.reportId)
       fail(409, "report_already_submitted", "Laporan sudah dikirim.");
     if (!h) {
@@ -296,11 +299,13 @@ export const send = mutation({
       );
       if (h.status !== "active")
         fail(409, "handoff_not_active", "Percakapan ini tidak aktif.");
+      requireOpenConversation(session);
       sessionId = session.id;
       handoffId = h.id;
       staffId = staff.id;
     } else {
       const s = await reporter(ctx, a.sessionId ?? "");
+      requireOpenConversation(s);
       const h = await openHandoff(ctx, s);
       if (!h)
         fail(
@@ -366,6 +371,8 @@ export const finish = mutation({
     sessionId: v.optional(v.string()),
     handoffId: v.string(),
     revision: v.number(),
+    endConversation: v.optional(v.boolean()),
+    confirmed: v.optional(v.boolean()),
     content: sealed,
     message,
     requestId: v.optional(v.string()),
@@ -376,6 +383,11 @@ export const finish = mutation({
     const s = isStaff
       ? (await thread(ctx, a.staffSessionId!, a.handoffId)).session
       : await reporter(ctx, a.sessionId ?? "");
+    if (a.endConversation) {
+      if (!a.staffSessionId) fail(403, "staff_forbidden", "Hanya admin dapat menghentikan percakapan pelapor.");
+      await staffSession(ctx, a.staffSessionId, ["admin"]);
+      if (!a.confirmed) fail(422, "confirmation_required", "Konfirmasi penghentian percakapan diperlukan.");
+    }
     const h = await openHandoff(ctx, s);
     if (!h || h.id !== a.handoffId)
       fail(409, "handoff_not_open", "Tidak ada bantuan petugas yang aktif.");
@@ -407,7 +419,7 @@ export const finish = mutation({
         : ("reporter_cancelled" as const),
     };
     await ctx.db.patch(h._id, patch);
-    await ctx.db.patch(s._id, { openHandoffId: undefined });
+    await ctx.db.patch(s._id, { openHandoffId: undefined, ...(a.endConversation ? { conversationEndedAt: Date.now() } : {}) });
     const msg = await appendMessage(ctx, s.id, {
       ...a.message,
       source: "handoff",
@@ -418,7 +430,7 @@ export const finish = mutation({
     await audit(ctx, {
       actorType: staff ? "staff" : "anonymous",
       actorId: staff?.id,
-      action: staff ? "staff.chat.closed" : "chat.handoff.cancelled",
+      action: a.endConversation ? "admin.chat.ended" : staff ? "staff.chat.closed" : "chat.handoff.cancelled",
       objectType: "chat_handoff",
       objectId: h.id,
       requestId: a.requestId,
